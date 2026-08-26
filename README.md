@@ -26,7 +26,7 @@ ctest --test-dir build --output-on-failure
 include(FetchContent)
 FetchContent_Declare(
   pp_cpp_common
-  GIT_REPOSITORY git@github.com:people-post/pp-cpp-common.git
+  GIT_REPOSITORY https://github.com/people-post/pp-cpp-common.git
   GIT_TAG <commit-or-tag>
 )
 FetchContent_MakeAvailable(pp_cpp_common)
