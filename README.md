@@ -20,6 +20,8 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+CI (`.github/workflows/build.yml`) builds and tests on Ubuntu 24.04, Windows 2022, and macOS 14 for every PR to `develop` / `main`.
+
 ## Consume (FetchContent)
 
 Pin a **release tag cut from `main`** (do not track `develop` or floating branch tips):
