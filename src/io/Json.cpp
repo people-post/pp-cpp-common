@@ -1,9 +1,11 @@
 #include "common/io/Json.h"
 
 #include <cctype>
+#include <cerrno>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -436,9 +438,13 @@ private:
     }
     std::string num(start, p_);
     if (isFloat) {
-      double d = 0.0;
-      auto r = std::from_chars(num.data(), num.data() + num.size(), d);
-      if (r.ec != std::errc() || r.ptr != num.data() + num.size()) {
+      // Apple libc++ (and some other libcs) still lack std::from_chars for floating
+      // point; strtod is portable. Token is already JSON-validated.
+      char *endPtr = nullptr;
+      errno = 0;
+      const double d = std::strtod(num.c_str(), &endPtr);
+      if (errno == ERANGE || endPtr != num.c_str() + num.size() ||
+          !std::isfinite(d)) {
         return makeErr("invalid floating-point number", offset(), path);
       }
       return Value(d);
