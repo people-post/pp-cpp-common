@@ -9,6 +9,8 @@ Shared C++ foundation for People Post apps (`namespace pp`).
 - `WorkerPool`, `SequencedTaskRunner`
 - `CivilTime`, `Utilities`
 - Binary wire helpers (`Serialize`, `BinaryPack`)
+- Human document tree: `Value` / `Object` (`Meta` alias), `FiFoMap`
+- Hand-written UTF-8 JSON IO (`common/io/Json.h`)
 
 Public headers live under `include/common/` so consumers keep `#include "common/…"`.
 

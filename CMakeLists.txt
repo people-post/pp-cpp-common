@@ -13,7 +13,9 @@ add_library(pp_common STATIC
   src/Module.cpp
   src/SequencedTaskRunner.cpp
   src/Utilities.cpp
+  src/Value.cpp
   src/WorkerPool.cpp
+  src/io/Json.cpp
 )
 add_library(pp::common ALIAS pp_common)
 
@@ -52,6 +54,7 @@ if(PP_COMMON_BUILD_TESTS)
   add_executable(pp_common_test
     tests/civil_time_test.cpp
     tests/logger_emit_floor_test.cpp
+    tests/value_meta_test.cpp
     tests/worker_pool_test.cpp)
   target_link_libraries(pp_common_test PRIVATE
     pp_common
