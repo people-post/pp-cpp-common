@@ -549,15 +549,15 @@ pp::Roe<Value> valueFromJsonString(const std::string &json) {
   return v;
 }
 
-std::string metaToJsonString(const Meta &m, int indent) {
-  auto r = valueToJsonString(Value(std::make_shared<Object>(m)), indent);
+std::string objectToJsonString(const Object &o, int indent) {
+  auto r = valueToJsonString(Value(std::make_shared<Object>(o)), indent);
   if (!r.isOk()) {
     return std::string("{\"error\":") + "\"" + r.error().message + "\"}";
   }
   return std::move(r.value());
 }
 
-bool metaFromJsonString(Meta &out, const std::string &json) {
+bool objectFromJsonString(Object &out, const std::string &json) {
   auto r = valueFromJsonString(json);
   if (!r.isOk()) {
     return false;

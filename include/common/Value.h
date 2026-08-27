@@ -66,7 +66,7 @@ Value makeArray(std::vector<Value> elements);
 
 class Object {
 public:
-  /** Nested aliases so Meta::Value / Meta::Array keep compiling. */
+  /** Nested aliases for historical Meta::Value / Meta::Array call sites. */
   using Value = pp::common::Value;
   using Array = pp::common::Array;
   using ArrayPtr = pp::common::ArrayPtr;
@@ -123,7 +123,7 @@ public:
 
   const FiFoMap<std::string, Value> &fields() const { return fields_; }
 
-  /** Compatibility alias for older Meta::entries(). */
+  /** Compatibility alias for older object entry iteration (Meta::entries). */
   const FiFoMap<std::string, Value> &entries() const { return fields_; }
 
   void set(const std::string &key, Value value) {
@@ -198,10 +198,6 @@ public:
 private:
   FiFoMap<std::string, Value> fields_;
 };
-
-/** Transition alias: historical Meta name = Object. */
-using Meta = Object;
-using MetaPtr = ObjectPtr;
 
 bool isNullValue(const Value &v);
 bool isStringValue(const Value &v);

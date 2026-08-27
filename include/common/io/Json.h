@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/Meta.h"
+#include "common/Value.h"
 #include "common/ResultOrError.hpp"
 
 #include "common/Error.h"
@@ -16,16 +16,26 @@ pp::Roe<std::string> valueToJsonString(const Value &v, int indent = -1);
 pp::Roe<Value> valueFromJsonString(const std::string &json);
 
 /**
- * Serialize Object to JSON. Convenience for Meta / ltsToMeta call sites.
+ * Serialize Object to JSON.
  * indent < 0 → compact; indent >= 0 → pretty-print.
  * On encode failure (e.g. u64 > INT64_MAX), returns a small JSON error object.
  */
-std::string metaToJsonString(const Meta &m, int indent = -1);
+std::string objectToJsonString(const Object &o, int indent = -1);
 
 /**
- * Parse a JSON object into Meta. Returns false on syntax/type mismatch or
+ * Parse a JSON object into Object. Returns false on syntax/type mismatch or
  * non-object root. Prefer valueFromJsonString for structured errors.
  */
-bool metaFromJsonString(Meta &out, const std::string &json);
+bool objectFromJsonString(Object &out, const std::string &json);
+
+/** @deprecated Prefer objectToJsonString — kept for ledger Meta call sites. */
+inline std::string metaToJsonString(const Object &o, int indent = -1) {
+  return objectToJsonString(o, indent);
+}
+
+/** @deprecated Prefer objectFromJsonString. */
+inline bool metaFromJsonString(Object &out, const std::string &json) {
+  return objectFromJsonString(out, json);
+}
 
 } // namespace pp::common::io
