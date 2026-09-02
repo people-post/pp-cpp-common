@@ -283,13 +283,16 @@ std::shared_ptr<LoggerNode> LoggerNode::getOrInitDirectChild(const std::string& 
   return newChild;
 }
 
-static std::shared_ptr<LoggerNode> initRootLogger() {
-  auto root = std::make_shared<LoggerNode>("");
-  root->addHandler(std::make_shared<ConsoleHandler>());
+// Meyers singleton: safe when Module subclasses are constructed from other TUs'
+// dynamic initializers (avoids SIOF on a namespace-scope g_spRoot).
+static std::shared_ptr<LoggerNode>& RootLoggerNode() {
+  static std::shared_ptr<LoggerNode> root = [] {
+    auto node = std::make_shared<LoggerNode>("");
+    node->addHandler(std::make_shared<ConsoleHandler>());
+    return node;
+  }();
   return root;
 }
-
-static std::shared_ptr<LoggerNode> g_spRoot = initRootLogger();
 
 Logger::Logger(std::shared_ptr<LoggerNode> node)
     : spNode_(std::move(node)),
@@ -313,7 +316,7 @@ void Logger::redirectTo(const std::string &targetLoggerName) {
 
   auto targetNode = targetLogger.getNode();
 
-  if (spNode_ == g_spRoot) {
+  if (spNode_ == RootLoggerNode()) {
     spNode_ = targetNode;
     return;
   }
@@ -341,23 +344,24 @@ void Logger::redirectTo(const std::string &targetLoggerName) {
 }
 
 Logger getLogger(const std::string &name) {
-  auto spNode = g_spRoot->getOrInitChild(name);
+  auto& root = RootLoggerNode();
+  auto spNode = root->getOrInitChild(name);
   if (!spNode) {
-    return Logger(g_spRoot);
+    return Logger(root);
   }
   return Logger(spNode);
 }
 
 Logger getRootLogger() {
-  return Logger(g_spRoot);
+  return Logger(RootLoggerNode());
 }
 
 Level getLevel() {
-  return g_spRoot->getLevel();
+  return RootLoggerNode()->getLevel();
 }
 
 void setLevel(Level level) {
-  g_spRoot->setLevel(level);
+  RootLoggerNode()->setLevel(level);
 }
 
 Level getEmitFloor() {
