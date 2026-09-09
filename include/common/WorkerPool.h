@@ -17,8 +17,8 @@ enum class WorkerLane { Critical, Normal, Background };
 /** Fixed-size pool with three priority lanes. Only pool threads may run long blocking work. */
 class WorkerPool : public Module {
 public:
-  /** Floor matches call-media needs: Connect wait + hello/ack + inbound must not share 2 threads. */
-  static constexpr size_t kMinThreadCount = 4;
+  /** Floor for HTTP / LLM / Argon2 concurrency. Amp Connect waits use MeshControlPool (pp-browser). */
+  static constexpr size_t kMinThreadCount = 2;
   static constexpr size_t kMaxThreadCount = 8;
   static constexpr size_t kDefaultThreadCount = 4;
 
