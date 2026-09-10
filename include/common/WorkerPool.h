@@ -2,6 +2,8 @@
 
 #include "common/Module.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <condition_variable>
 #include <deque>
@@ -17,10 +19,12 @@ enum class WorkerLane { Critical, Normal, Background };
 /** Fixed-size pool with three priority lanes. Only pool threads may run long blocking work. */
 class WorkerPool : public Module {
 public:
-  /** Floor matches call-media needs: Connect wait + hello/ack + inbound must not share 2 threads. */
-  static constexpr size_t kMinThreadCount = 4;
+  /** Floor for HTTP / LLM / Argon2 concurrency. Amp Connect waits use MeshControlPool (pp-browser). */
+  static constexpr size_t kMinThreadCount = 2;
   static constexpr size_t kMaxThreadCount = 8;
   static constexpr size_t kDefaultThreadCount = 4;
+  /** Soft join budget for product quit (stuck in-flight work is detached until process exit). */
+  static constexpr std::chrono::milliseconds kDefaultShutdownJoinBudget{500};
 
   explicit WorkerPool(size_t thread_count = kDefaultThreadCount);
   ~WorkerPool();
@@ -36,7 +40,13 @@ public:
   void Pause();
   void Resume();
   /** Stop accepting work, drop queued tasks, join workers (in-flight tasks still finish). */
-  void Shutdown();
+  void Shutdown() { (void)Shutdown(kDefaultShutdownJoinBudget); }
+  /**
+   * Like Shutdown(), but abandon join after `join_budget` if a worker is stuck mid-task.
+   * Detached workers are leaked until process exit — only safe when the process is quitting.
+   * Returns false if any worker was detached after the budget.
+   */
+  bool Shutdown(std::chrono::milliseconds join_budget);
 
   size_t QueuedCount(WorkerLane lane) const;
   size_t TotalQueuedCount() const;
@@ -58,6 +68,7 @@ private:
   std::deque<std::function<void()>> background_queue_;
   bool stopped_ = false;
   bool paused_ = false;
+  std::atomic<size_t> live_workers_{0};
 };
 
 template <typename Result>
