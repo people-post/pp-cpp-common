@@ -39,6 +39,7 @@ size_t WorkerPool::ClampThreadCount(const size_t thread_count) {
 WorkerPool::WorkerPool(const size_t thread_count)
     : thread_count_(ClampThreadCount(thread_count)) {
   redirectLogger("WorkerPool");
+  live_workers_.store(thread_count_, std::memory_order_relaxed);
   threads_.reserve(thread_count_);
   for (size_t i = 0; i < thread_count_; ++i) {
     threads_.emplace_back([this, i]() { WorkerMain(i); });
@@ -46,7 +47,7 @@ WorkerPool::WorkerPool(const size_t thread_count)
 }
 
 WorkerPool::~WorkerPool() {
-  Shutdown();
+  (void)Shutdown(kDefaultShutdownJoinBudget);
 }
 
 void WorkerPool::Post(WorkerLane lane, std::function<void()> task) {
@@ -77,11 +78,11 @@ void WorkerPool::Resume() {
   cv_.notify_all();
 }
 
-void WorkerPool::Shutdown() {
+bool WorkerPool::Shutdown(std::chrono::milliseconds join_budget) {
   {
     std::lock_guard lock(mutex_);
     if (stopped_) {
-      return;
+      return live_workers_.load(std::memory_order_acquire) == 0 && threads_.empty();
     }
     stopped_ = true;
     critical_queue_.clear();
@@ -89,12 +90,32 @@ void WorkerPool::Shutdown() {
     background_queue_.clear();
   }
   cv_.notify_all();
+
+  const auto deadline = std::chrono::steady_clock::now() + join_budget;
+  {
+    std::unique_lock lock(mutex_);
+    cv_.wait_until(lock, deadline, [this]() {
+      return live_workers_.load(std::memory_order_acquire) == 0;
+    });
+  }
+
+  const bool all_exited = live_workers_.load(std::memory_order_acquire) == 0;
+  bool ok = true;
   for (std::thread& thread : threads_) {
-    if (thread.joinable()) {
-      thread.join();
+    if (!thread.joinable()) {
+      continue;
     }
+    if (all_exited) {
+      thread.join();
+      continue;
+    }
+    log().error << "WorkerPool::Shutdown: worker still live after " << join_budget.count()
+                << "ms — detaching (process exit must follow)";
+    thread.detach();
+    ok = false;
   }
   threads_.clear();
+  return ok;
 }
 
 size_t WorkerPool::QueuedCount(const WorkerLane lane) const {
@@ -131,6 +152,8 @@ void WorkerPool::WorkerMain(const size_t worker_index) {
       cv_.wait(lock, [this]() { return stopped_ || (!paused_ && HasWorkLocked()); });
       // Once Shutdown sets stopped_, never dequeue — queued work was dropped under the same lock.
       if (stopped_) {
+        live_workers_.fetch_sub(1, std::memory_order_acq_rel);
+        cv_.notify_all();
         break;
       }
       if (paused_ || !DequeueOneLocked(&task)) {
