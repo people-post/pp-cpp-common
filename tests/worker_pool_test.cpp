@@ -158,11 +158,12 @@ TEST(WorkerPoolTest, ShutdownDropsQueuedWorkAndJoins) {
     return started;
   }, std::chrono::milliseconds(2000));
 
+  // pool(1) clamps to kMinThreadCount (2). Pause *before* posting Background so the idle
+  // second worker cannot dequeue it while Normal still holds the first.
+  pool.Pause();
   pool.Post(WorkerLane::Background, [&]() { background_ran.fetch_add(1); });
   EXPECT_GE(pool.QueuedCount(WorkerLane::Background), 1u);
 
-  // Pause so the worker cannot dequeue Background after Normal finishes and before Shutdown.
-  pool.Pause();
   {
     std::lock_guard lock(mu);
     allow_finish = true;
