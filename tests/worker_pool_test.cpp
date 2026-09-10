@@ -158,11 +158,12 @@ TEST(WorkerPoolTest, ShutdownDropsQueuedWorkAndJoins) {
     return started;
   }, std::chrono::milliseconds(2000));
 
+  // pool(1) clamps to kMinThreadCount (2). Pause *before* posting Background so the idle
+  // second worker cannot dequeue it while Normal still holds the first.
+  pool.Pause();
   pool.Post(WorkerLane::Background, [&]() { background_ran.fetch_add(1); });
   EXPECT_GE(pool.QueuedCount(WorkerLane::Background), 1u);
 
-  // Pause so the worker cannot dequeue Background after Normal finishes and before Shutdown.
-  pool.Pause();
   {
     std::lock_guard lock(mu);
     allow_finish = true;
@@ -201,3 +202,38 @@ TEST(WorkerPoolTest, ThreadCountIsClamped) {
   small_pool.Shutdown();
   large_pool.Shutdown();
 }
+
+TEST(WorkerPoolTest, ShutdownAbandonsJoinAfterBudget) {
+  WorkerPool pool(1);
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool started = false;
+  std::atomic<bool> release{false};
+
+  pool.Post(WorkerLane::Normal, [&]() {
+    {
+      std::lock_guard lock(mu);
+      started = true;
+    }
+    cv.notify_all();
+    while (!release.load(std::memory_order_acquire)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  });
+
+  WaitUntil([&]() {
+    std::lock_guard lock(mu);
+    return started;
+  }, std::chrono::milliseconds(2000));
+
+  const auto t0 = std::chrono::steady_clock::now();
+  EXPECT_FALSE(pool.Shutdown(std::chrono::milliseconds(100)));
+  const auto elapsed = std::chrono::steady_clock::now() - t0;
+  EXPECT_LT(elapsed, std::chrono::milliseconds(1000));
+
+  // Unblock the detached worker before process teardown so it does not touch freed stack.
+  release.store(true, std::memory_order_release);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
+
