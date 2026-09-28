@@ -140,10 +140,8 @@ public:
 private:
   std::shared_ptr<LoggerNode> getOrInitDirectChild(const std::string& name);
 
-  void logToHandlers(Level level, const std::string &message);
   void logWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName);
   void logToHandlersWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName);
-  std::string formatMessage(Level level, const std::string &message);
   std::string formatMessage(Level level, const std::string &message, const std::string &originatingLoggerName);
   std::string levelToString(Level level);
 

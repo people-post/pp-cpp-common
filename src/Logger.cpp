@@ -174,15 +174,6 @@ void LoggerNode::logWithOriginatingName(Level level, const std::string &message,
   }
 }
 
-void LoggerNode::logToHandlers(Level level, const std::string &message) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  std::string formattedMessage = formatMessage(level, message);
-
-  for (auto &spHandler : spHandlers_) {
-    spHandler->emit(level, name_, formattedMessage);
-  }
-}
-
 void LoggerNode::logToHandlersWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::string formattedMessage = formatMessage(level, message, originatingLoggerName);
@@ -190,18 +181,6 @@ void LoggerNode::logToHandlersWithOriginatingName(Level level, const std::string
   for (auto &spHandler : spHandlers_) {
     spHandler->emit(level, originatingLoggerName, formattedMessage);
   }
-}
-
-std::string LoggerNode::formatMessage(Level level, const std::string &message) {
-  std::stringstream ss;
-  ss << "[" << getCurrentTimestamp() << "] ";
-  ss << "[" << levelToString(level) << "] ";
-  std::string fullName = getFullName();
-  if (!fullName.empty()) {
-    ss << "[" << fullName << "] ";
-  }
-  ss << message;
-  return ss.str();
 }
 
 std::string LoggerNode::formatMessage(Level level, const std::string &message, const std::string &originatingLoggerName) {
