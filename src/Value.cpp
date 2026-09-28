@@ -15,7 +15,7 @@ namespace {
 // so a malicious deeply-nested payload cannot exhaust the C++ call stack.
 // RAII rather than an explicit parameter: wireToValue's signature is public
 // API and Object::serialize (Value.h, header-only) also recurses into it.
-constexpr int kMaxWireDepth = 256;
+constexpr int kMaxWireDepth = 128;
 thread_local int g_wireDepth = 0;
 
 struct WireDepthGuard {
