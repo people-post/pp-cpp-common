@@ -237,3 +237,40 @@ TEST(WorkerPoolTest, ShutdownAbandonsJoinAfterBudget) {
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
+TEST(WorkerPoolTest, DetachedWorkerSurvivesPoolDestruction) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool started = false;
+  std::atomic<bool> release{false};
+  std::atomic<int> ran{0};
+
+  {
+    WorkerPool pool(1);
+    pool.Post(WorkerLane::Normal, [&]() {
+      {
+        std::lock_guard lock(mu);
+        started = true;
+      }
+      cv.notify_all();
+      while (!release.load(std::memory_order_acquire)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      ran.fetch_add(1);
+    });
+
+    WaitUntil([&]() {
+      std::lock_guard lock(mu);
+      return started;
+    }, std::chrono::milliseconds(2000));
+
+    // A short budget forces Shutdown to detach the still-running worker.
+    EXPECT_FALSE(pool.Shutdown(std::chrono::milliseconds(50)));
+  } // `pool` (and its old raw mutex_/cv_/queues_) is destroyed here, worker still blocked.
+
+  // The detached worker must keep running against state kept alive via
+  // shared_ptr, not against freed WorkerPool memory — regression test for the
+  // use-after-free this fixes.
+  release.store(true, std::memory_order_release);
+  WaitUntil([&]() { return ran.load() == 1; }, std::chrono::milliseconds(2000));
+}
+
