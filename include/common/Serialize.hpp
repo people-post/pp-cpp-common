@@ -610,26 +610,14 @@ public:
       return false;
     }
 
-    // Read in bounded chunks instead of resize(size) up front: a declared size
-    // near MAX_STRING_SIZE would otherwise allocate up to 64MB per string
-    // before confirming the stream actually holds that many bytes, letting a
-    // small malicious payload (many such length prefixes) force large
-    // allocations. Chunking caps wasted allocation to one chunk beyond what's
-    // truly present.
-    static constexpr size_t kChunkSize = 64 * 1024;
-    value.clear();
-    value.reserve(static_cast<size_t>(std::min<uint64_t>(size, kChunkSize)));
-    uint64_t remaining = size;
-    char buf[kChunkSize];
-    while (remaining > 0) {
-      const size_t want =
-          static_cast<size_t>(std::min<uint64_t>(remaining, kChunkSize));
-      if (!is_.read(buf, static_cast<std::streamsize>(want))) {
+    // MAX_STRING_SIZE above already bounds the allocation this resize() can
+    // cause (64MB worst case), so read the whole declared length directly.
+    value.resize(static_cast<size_t>(size));
+    if (size > 0) {
+      if (!is_.read(&value[0], static_cast<std::streamsize>(size))) {
         failed_ = true;
         return false;
       }
-      value.append(buf, want);
-      remaining -= want;
     }
     return true;
   }
@@ -651,7 +639,7 @@ public:
     // actually still available (a hard floor of 1 byte/element) and by a fixed
     // ceiling; the loop below is still driven by `size` and fails as soon as
     // the stream runs out, so legitimately large inputs are unaffected.
-    value.reserve(static_cast<size_t>(boundedReserveCount(size)));
+    value.reserve(static_cast<size_t>(boundedReserveCount<T>(size)));
     for (uint64_t i = 0; i < size; ++i) {
       T item;
       (*this) & item;
@@ -747,7 +735,10 @@ public:
       if (failed_) {
         return false;
       }
-      value.insert(std::move(item));
+      if (!value.insert(std::move(item)).second) {
+        failed_ = true;
+        return false;
+      }
     }
     return true;
   }
@@ -768,7 +759,10 @@ public:
       if (failed_) {
         return false;
       }
-      value.insert(std::move(item));
+      if (!value.insert(std::move(item)).second) {
+        failed_ = true;
+        return false;
+      }
     }
     return true;
   }
@@ -925,15 +919,17 @@ private:
   static constexpr uint64_t MAX_STRING_SIZE =
       static_cast<uint64_t>(64) * 1024 * 1024; // 64 MB
 
-  // Hard ceiling on a single container's initial reserve(), independent of
-  // MAX_STRING_SIZE (elements need not be bytes).
-  static constexpr uint64_t MAX_RESERVE_ELEMENTS =
-      static_cast<uint64_t>(8) * 1024 * 1024;
+  // Hard ceiling on a single container's initial reserve(), expressed in
+  // bytes (not elements) so it scales down for large T instead of always
+  // allowing MAX_RESERVE_ELEMENTS * sizeof(T) bytes up front.
+  static constexpr uint64_t MAX_RESERVE_BYTES =
+      static_cast<uint64_t>(64) * 1024 * 1024;
 
   // Clamp an attacker-controlled element count to what's plausibly readable:
   // the smaller of the declared count, the bytes currently buffered in the
   // stream (a safe underestimate for streams that don't buffer everything,
-  // e.g. file streams), and a fixed ceiling.
+  // e.g. file streams), and a fixed byte-budget-derived ceiling.
+  template <typename T>
   uint64_t boundedReserveCount(uint64_t requested) const {
     uint64_t cap = requested;
     if (std::streambuf *buf = is_.rdbuf()) {
@@ -942,7 +938,8 @@ private:
         cap = std::min(cap, static_cast<uint64_t>(avail));
       }
     }
-    return std::min(cap, MAX_RESERVE_ELEMENTS);
+    constexpr uint64_t kMaxElementsByBytes = MAX_RESERVE_BYTES / sizeof(T);
+    return std::min(cap, kMaxElementsByBytes);
   }
 
   std::istream &is_;

@@ -446,6 +446,40 @@ TEST(MetaTest, Json_NestingDepthBoundaryIsConsistentBetweenEncodeAndParse) {
   EXPECT_EQ(encoded.value(), text);
 }
 
+TEST(MetaTest, Wire_SetRejectsDuplicateElement) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t entryCount = 2;
+  ar & entryCount;
+  std::string a = "dup";
+  std::string b = "dup";
+  ar & a;
+  ar & b;
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::set<std::string> s;
+  iar & s;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_UnorderedSetRejectsDuplicateElement) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t entryCount = 2;
+  ar & entryCount;
+  int64_t a = 7;
+  int64_t b = 7;
+  ar & a;
+  ar & b;
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::unordered_set<int64_t> s;
+  iar & s;
+  EXPECT_TRUE(iar.failed());
+}
+
 TEST(MetaTest, Json_WhitespaceRejectsFormFeedAndVerticalTab) {
   // JSON only allows space/\t/\n/\r between tokens; \f and \v are not valid
   // whitespace even though std::isspace accepts them.
@@ -508,14 +542,29 @@ TEST(MetaTest, Wire_VectorWithHugeDeclaredSizeFailsInsteadOfOOM) {
   EXPECT_TRUE(iar.failed());
 }
 
-TEST(MetaTest, Wire_StringWithHugeDeclaredSizeFailsInsteadOfOOM) {
+TEST(MetaTest, Wire_StringSizeExceedingActualDataFails) {
   std::ostringstream oss(std::ios::binary);
   OutputArchive ar(oss);
-  uint64_t hugeSize = 63ull * 1024 * 1024; // under MAX_STRING_SIZE, but far more
-                                           // than the bytes actually present
-  ar & hugeSize;
+  uint64_t declaredSize = 63ull * 1024 * 1024; // under MAX_STRING_SIZE, but far
+                                               // more than the bytes present
+  ar & declaredSize;
   // Only a few bytes actually follow.
   oss.write("ab", 2);
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::string s;
+  iar & s;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_StringSizeAboveMaxIsRejectedWithoutReading) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t tooLarge = 65ull * 1024 * 1024; // over the 64MB MAX_STRING_SIZE cap
+  ar & tooLarge;
+  // No payload bytes follow; a correct implementation must reject the
+  // declared size itself rather than trying to read.
 
   std::istringstream iss(oss.str(), std::ios::binary);
   InputArchive iar(iss);
