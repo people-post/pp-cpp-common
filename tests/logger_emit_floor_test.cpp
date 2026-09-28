@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -57,6 +58,48 @@ TEST(LoggerEmitFloorTest, PromotesAfterFilterKeepsOriginalThreshold) {
   // DEBUG still filtered by logger level (INFO); floor must not bypass that.
   log.debug << "hidden";
   EXPECT_EQ(handler->count, 1);
+}
+
+namespace {
+
+// Returns a Logger built from a copy of a local Logger whose original goes out
+// of scope before this function returns.
+Logger MakeLoggerViaCopy(std::shared_ptr<CaptureHandler> handler) {
+  Logger original = pp::logging::getLogger("test.logger_copy.independent");
+  original.setPropagate(false);
+  original.addHandler(std::move(handler));
+  Logger copy = original; // exercises Logger's copy constructor
+  return copy;
+} // `original` is destroyed here.
+
+} // namespace
+
+TEST(LoggerTest, CopyProxiesStayValidAfterSourceDestroyed) {
+  auto handler = std::make_shared<CaptureHandler>();
+  Logger copy = MakeLoggerViaCopy(handler);
+
+  // Before the fix, LogProxy members were copied verbatim and kept pointing
+  // at the (now-destroyed) `original` Logger inside MakeLoggerViaCopy, so
+  // this would log through a dangling pointer instead of through `copy`.
+  copy.setLevel(Level::INFO);
+  copy.info << "via-copy";
+
+  ASSERT_EQ(handler->count, 1);
+  EXPECT_NE(handler->last_message.find("via-copy"), std::string::npos);
+}
+
+TEST(LoggerTest, MoveProxiesStayValidAfterSourceDestroyed) {
+  auto handler = std::make_shared<CaptureHandler>();
+  Logger original = pp::logging::getLogger("test.logger_move.independent");
+  original.setPropagate(false);
+  original.setLevel(Level::INFO);
+  original.addHandler(handler);
+
+  Logger moved = std::move(original);
+  moved.info << "via-move";
+
+  ASSERT_EQ(handler->count, 1);
+  EXPECT_NE(handler->last_message.find("via-move"), std::string::npos);
 }
 
 TEST(LoggerEmitFloorTest, DefaultFloorIsNoOp) {
