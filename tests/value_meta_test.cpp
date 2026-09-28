@@ -364,7 +364,7 @@ TEST(MetaTest, Json_DeeplyNestedObjectIsRejectedNotCrashed) {
 }
 
 TEST(MetaTest, Json_ModeratelyNestedArrayStillParses) {
-  constexpr int kDepth = 200; // under the 256 cap
+  constexpr int kDepth = 100; // under the 128 cap
   std::string deep(kDepth, '[');
   deep += "1";
   deep.append(kDepth, ']');
@@ -400,6 +400,50 @@ TEST(MetaTest, Json_Utf8_AcceptsValidMultiByte) {
   auto r = valueFromJsonString(ok);
   ASSERT_TRUE(r.isOk());
   EXPECT_EQ(std::get<std::string>(r.value()), "世界");
+}
+
+TEST(MetaTest, Json_EncodeSanitizesInvalidUtf8InStringValue) {
+  // A string built without going through the JSON parser (e.g. wire-decoded)
+  // can contain invalid UTF-8. objectToJsonString must still produce output
+  // this library's own parser can read back, substituting U+FFFD for the bad
+  // byte(s) instead of emitting broken UTF-8 verbatim.
+  Object m;
+  m.set("k", std::string("a\xC0\x80""b")); // overlong-encoded NUL in the middle
+  const std::string j = objectToJsonString(m);
+  auto reparsed = valueFromJsonString(j);
+  ASSERT_TRUE(reparsed.isOk()) << "objectToJsonString produced invalid JSON: " << j;
+  auto *obj = std::get_if<ObjectPtr>(&reparsed.value());
+  ASSERT_TRUE(obj && *obj);
+  auto v = (*obj)->getString("k");
+  ASSERT_TRUE(v.has_value());
+  // Each invalid byte (0xC0, then the now-isolated 0x80) is replaced on its
+  // own, so the two-byte overlong sequence becomes two U+FFFD.
+  EXPECT_EQ(*v, "a\xEF\xBF\xBD\xEF\xBF\xBD""b");
+}
+
+TEST(MetaTest, Json_EncodeSanitizesInvalidUtf8InObjectKey) {
+  // Same, but for the error-message path (which can embed a raw object key).
+  Object m;
+  m.set(std::string("bad\xFF""key"), Value(std::numeric_limits<double>::quiet_NaN()));
+  const std::string j = objectToJsonString(m);
+  auto reparsed = valueFromJsonString(j);
+  ASSERT_TRUE(reparsed.isOk()) << "objectToJsonString produced invalid JSON: " << j;
+}
+
+TEST(MetaTest, Json_NestingDepthBoundaryIsConsistentBetweenEncodeAndParse) {
+  // A Value tree built directly at exactly the parser's accepted depth must
+  // also be encodable, and re-parsing the result must be rejected the same
+  // way the original 128-deep text is (encode/parse off-by-one regression).
+  constexpr int kDepth = 128;
+  std::string text(kDepth, '[');
+  text += "1";
+  text.append(kDepth, ']');
+  auto parsed = valueFromJsonString(text);
+  ASSERT_TRUE(parsed.isOk());
+
+  auto encoded = valueToJsonString(parsed.value());
+  ASSERT_TRUE(encoded.isOk());
+  EXPECT_EQ(encoded.value(), text);
 }
 
 TEST(MetaTest, Json_WhitespaceRejectsFormFeedAndVerticalTab) {
