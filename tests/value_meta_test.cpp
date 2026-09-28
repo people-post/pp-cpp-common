@@ -8,6 +8,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -179,8 +180,11 @@ TEST(MetaTest, DuplicateKeys_AreRejected) {
     ar & key & ValueWire::TAG_U64 & payload;
   }
 
+  // A duplicate key is malformed input: decode must fail, not silently
+  // succeed with an empty Object (that used to leave callers checking only
+  // isOk() unable to tell "empty object" from "corrupt wire data").
   Object out;
-  EXPECT_TRUE(archiveUnpack(oss.str(), out));
+  EXPECT_FALSE(archiveUnpack(oss.str(), out));
   EXPECT_TRUE(out.empty());
 }
 
@@ -474,4 +478,51 @@ TEST(MetaTest, Wire_StringWithHugeDeclaredSizeFailsInsteadOfOOM) {
   std::string s;
   iar & s;
   EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_ArrayValueRejectsTrailingBytes) {
+  // Build a TAG_ARRAY ValueWire whose payload has one extra byte after a
+  // well-formed 0-element array.
+  std::ostringstream p(std::ios::binary);
+  OutputArchive par(p);
+  uint64_t n = 0;
+  par & n;
+  std::string payload = p.str();
+  payload.push_back('\x7f'); // trailing garbage
+
+  ValueWire wire;
+  wire.tag = ValueWire::TAG_ARRAY;
+  wire.payload = payload;
+
+  std::optional<Value> out;
+  EXPECT_FALSE(wireToValue(wire, out));
+}
+
+TEST(MetaTest, Wire_ArrayRecursionDepthIsBounded) {
+  // Build ~300 nested single-element arrays iteratively (so *this test*
+  // doesn't recurse) and confirm wireToValue rejects the result instead of
+  // overflowing the stack itself while decoding it.
+  ValueWire wire;
+  wire.tag = ValueWire::TAG_ARRAY;
+  {
+    std::ostringstream p(std::ios::binary);
+    OutputArchive par(p);
+    uint64_t n = 0;
+    par & n;
+    wire.payload = p.str();
+  }
+  for (int i = 0; i < 300; ++i) {
+    std::ostringstream p(std::ios::binary);
+    OutputArchive par(p);
+    uint64_t n = 1;
+    par & n;
+    par & wire;
+    ValueWire outer;
+    outer.tag = ValueWire::TAG_ARRAY;
+    outer.payload = p.str();
+    wire = outer;
+  }
+
+  std::optional<Value> out;
+  EXPECT_FALSE(wireToValue(wire, out));
 }
