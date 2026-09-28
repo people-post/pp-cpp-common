@@ -485,6 +485,12 @@ public:
       failed_ = true;
       return false;
     }
+    // Wire profile defines bool as exactly 0 or 1; anything else is malformed
+    // input, not a "truthy" byte to be tolerated.
+    if (byte != 0 && byte != 1) {
+      failed_ = true;
+      return false;
+    }
     value = (byte != 0);
     return true;
   }
@@ -604,12 +610,26 @@ public:
       return false;
     }
 
-    value.resize(static_cast<size_t>(size));
-    if (size > 0) {
-      if (!is_.read(&value[0], static_cast<std::streamsize>(size))) {
+    // Read in bounded chunks instead of resize(size) up front: a declared size
+    // near MAX_STRING_SIZE would otherwise allocate up to 64MB per string
+    // before confirming the stream actually holds that many bytes, letting a
+    // small malicious payload (many such length prefixes) force large
+    // allocations. Chunking caps wasted allocation to one chunk beyond what's
+    // truly present.
+    static constexpr size_t kChunkSize = 64 * 1024;
+    value.clear();
+    value.reserve(static_cast<size_t>(std::min<uint64_t>(size, kChunkSize)));
+    uint64_t remaining = size;
+    char buf[kChunkSize];
+    while (remaining > 0) {
+      const size_t want =
+          static_cast<size_t>(std::min<uint64_t>(remaining, kChunkSize));
+      if (!is_.read(buf, static_cast<std::streamsize>(want))) {
         failed_ = true;
         return false;
       }
+      value.append(buf, want);
+      remaining -= want;
     }
     return true;
   }
@@ -625,7 +645,13 @@ public:
       return false;
     }
     value.clear();
-    value.reserve(size);
+    // `size` is attacker-controlled: reserve() on it directly lets a few bytes
+    // of input claim e.g. 2^63 elements and force a huge allocation before a
+    // single element is validated. Bound the reservation by how many bytes are
+    // actually still available (a hard floor of 1 byte/element) and by a fixed
+    // ceiling; the loop below is still driven by `size` and fails as soon as
+    // the stream runs out, so legitimately large inputs are unaffected.
+    value.reserve(static_cast<size_t>(boundedReserveCount(size)));
     for (uint64_t i = 0; i < size; ++i) {
       T item;
       (*this) & item;
@@ -669,7 +695,12 @@ public:
       if (failed_) {
         return false;
       }
-      value[std::move(key)] = std::move(val);
+      // Wire profile treats a duplicate key as malformed rather than "last one
+      // wins", matching Object's dup-key rejection.
+      if (!value.emplace(std::move(key), std::move(val)).second) {
+        failed_ = true;
+        return false;
+      }
     }
     return true;
   }
@@ -692,7 +723,10 @@ public:
       if (failed_) {
         return false;
       }
-      value[std::move(key)] = std::move(val);
+      if (!value.emplace(std::move(key), std::move(val)).second) {
+        failed_ = true;
+        return false;
+      }
     }
     return true;
   }
@@ -877,6 +911,11 @@ public:
 
   bool failed() const { return failed_; }
 
+  /** Lets a custom type's serialize() reject malformed content it detects
+   *  itself (e.g. a duplicate map key) without that having gone through a
+   *  primitive read() failure. */
+  void setFailed() { failed_ = true; }
+
   /** True when no read failure and no trailing bytes remain. */
   bool exactEnd() const {
     return !failed_ && is_.peek() == std::char_traits<char>::eof();
@@ -885,6 +924,26 @@ public:
 private:
   static constexpr uint64_t MAX_STRING_SIZE =
       static_cast<uint64_t>(64) * 1024 * 1024; // 64 MB
+
+  // Hard ceiling on a single container's initial reserve(), independent of
+  // MAX_STRING_SIZE (elements need not be bytes).
+  static constexpr uint64_t MAX_RESERVE_ELEMENTS =
+      static_cast<uint64_t>(8) * 1024 * 1024;
+
+  // Clamp an attacker-controlled element count to what's plausibly readable:
+  // the smaller of the declared count, the bytes currently buffered in the
+  // stream (a safe underestimate for streams that don't buffer everything,
+  // e.g. file streams), and a fixed ceiling.
+  uint64_t boundedReserveCount(uint64_t requested) const {
+    uint64_t cap = requested;
+    if (std::streambuf *buf = is_.rdbuf()) {
+      const std::streamsize avail = buf->in_avail();
+      if (avail >= 0) {
+        cap = std::min(cap, static_cast<uint64_t>(avail));
+      }
+    }
+    return std::min(cap, MAX_RESERVE_ELEMENTS);
+  }
 
   std::istream &is_;
   bool failed_ = false;

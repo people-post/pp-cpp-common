@@ -7,8 +7,10 @@
 
 #include <cmath>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 using pp::common::Array;
 using pp::common::ArrayPtr;
@@ -412,4 +414,64 @@ TEST(MetaTest, Json_ErrorMessageIsEscapedInOutput) {
   const std::string j = objectToJsonString(m);
   auto reparsed = valueFromJsonString(j);
   ASSERT_TRUE(reparsed.isOk()) << "objectToJsonString produced invalid JSON: " << j;
+}
+
+TEST(MetaTest, Wire_BoolRejectsNonCanonicalByte) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint8_t raw = 0xFF; // neither 0 nor 1
+  ar & raw;
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  bool value = false;
+  iar & value;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_MapRejectsDuplicateKey) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t entryCount = 2;
+  ar & entryCount;
+  std::string key = "dup";
+  int64_t v1 = 1;
+  int64_t v2 = 2;
+  ar & key & v1;
+  ar & key & v2;
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::map<std::string, int64_t> m;
+  iar & m;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_VectorWithHugeDeclaredSizeFailsInsteadOfOOM) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t hugeSize = std::numeric_limits<uint64_t>::max() / 2;
+  ar & hugeSize;
+  // No actual element bytes follow.
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::vector<uint8_t> v;
+  iar & v;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_StringWithHugeDeclaredSizeFailsInsteadOfOOM) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t hugeSize = 63ull * 1024 * 1024; // under MAX_STRING_SIZE, but far more
+                                           // than the bytes actually present
+  ar & hugeSize;
+  // Only a few bytes actually follow.
+  oss.write("ab", 2);
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::string s;
+  iar & s;
+  EXPECT_TRUE(iar.failed());
 }
