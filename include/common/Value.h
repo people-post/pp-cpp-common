@@ -92,11 +92,13 @@ public:
         }
         if (fields_.contains(key)) {
           fields_.clear();
+          ar.setFailed();
           return;
         }
         std::optional<Value> decoded;
         if (!wireToValue(wire, decoded)) {
           fields_.clear();
+          ar.setFailed();
           return;
         }
         if (decoded) {

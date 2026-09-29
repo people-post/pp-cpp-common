@@ -1,6 +1,5 @@
 #include "common/io/Json.h"
 
-#include <cctype>
 #include <cerrno>
 #include <charconv>
 #include <cmath>
@@ -14,8 +13,88 @@
 #include <utility>
 #include <variant>
 
+#if defined(_WIN32)
+#include <clocale> // _create_locale
+#else
+#include <locale.h> // newlocale / strtod_l (POSIX extension, not in <clocale>)
+#if defined(__APPLE__)
+#include <xlocale.h> // locale_t / newlocale / strtod_l declarations on Apple SDKs
+#endif
+#endif
+
 namespace pp::common::io {
 namespace {
+
+// Bounds recursion depth on both encode and decode so pathological input (or a
+// pathologically deep in-memory Value tree) cannot blow the call stack.
+constexpr int kMaxNestingDepth = 128;
+
+bool isAsciiDigit(char c) { return c >= '0' && c <= '9'; }
+
+bool isJsonWs(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+// Shared by the parser and the encoder so both sides of the UTF-8 validity
+// check (RFC 3629, rejecting overlong encodings / encoded surrogates / code
+// points above U+10FFFF) can't drift apart.
+struct Utf8LeadInfo {
+  int extraBytes = -1; // -1 = invalid lead byte; else count of continuation bytes
+  unsigned char lowBound = 0x80;
+  unsigned char highBound = 0xBF;
+};
+
+Utf8LeadInfo ClassifyUtf8Lead(unsigned char first) {
+  Utf8LeadInfo info;
+  if ((first & 0xE0) == 0xC0) {
+    if (first < 0xC2) {
+      return info; // overlong 2-byte lead
+    }
+    info.extraBytes = 1;
+  } else if ((first & 0xF0) == 0xE0) {
+    info.extraBytes = 2;
+    if (first == 0xE0) {
+      info.lowBound = 0xA0;
+    } else if (first == 0xED) {
+      info.highBound = 0x9F; // exclude UTF-16 surrogate range D800-DFFF
+    }
+  } else if ((first & 0xF8) == 0xF0) {
+    if (first > 0xF4) {
+      return info; // beyond U+10FFFF
+    }
+    info.extraBytes = 3;
+    if (first == 0xF0) {
+      info.lowBound = 0x90;
+    } else if (first == 0xF4) {
+      info.highBound = 0x8F; // exclude code points above U+10FFFF
+    }
+  }
+  return info;
+}
+
+// U+FFFD REPLACEMENT CHARACTER, encoded as UTF-8.
+constexpr char kReplacementCharUtf8[] = "\xEF\xBF\xBD";
+
+// strtod is used instead of std::from_chars<double> because Apple's libc++
+// historically lacks the floating-point overload. Route it through a fixed
+// "C" numeric locale (rather than the global C locale, which embedders may
+// change) so '.' is always the decimal point, and so the call is thread-safe.
+double strtodClassicLocale(const char *str, char **endPtr) {
+#if defined(_WIN32)
+  static _locale_t classicLocale = _create_locale(LC_ALL, "C");
+  if (classicLocale) {
+    return _strtod_l(str, endPtr, classicLocale);
+  }
+#else
+  static locale_t classicLocale = newlocale(LC_ALL_MASK, "C", (locale_t)0);
+  if (classicLocale) {
+    return strtod_l(str, endPtr, classicLocale);
+  }
+#endif
+  // classicLocale creation failed (should not happen in practice): fall back
+  // to the process's global locale rather than pass a null locale_t.
+  return std::strtod(str, endPtr);
+}
 
 pp::Error makeErr(std::string message, size_t offset, std::string path) {
   std::string full = std::move(message);
@@ -78,10 +157,33 @@ void appendEscapedJsonString(std::string &out, std::string_view s) {
       out.push_back(hex[(c >> 4) & 0xf]);
       out.push_back(hex[c & 0xf]);
       ++i;
-    } else {
-      // Pass through UTF-8 bytes as-is (already valid UTF-8 from our parsers/builders).
+    } else if (c < 0x80) {
       out.push_back(static_cast<char>(c));
       ++i;
+    } else {
+      // Callers can hand us a Value built without going through JSON parsing
+      // (e.g. wire-decoded, or an Object key set programmatically), so this
+      // is not guaranteed to already be valid UTF-8. Validate the sequence
+      // the same way the parser does, and substitute U+FFFD for anything
+      // malformed so the emitted JSON always round-trips through this
+      // library's own parser.
+      const Utf8LeadInfo info = ClassifyUtf8Lead(c);
+      bool ok = info.extraBytes >= 0 && i + 1 + static_cast<size_t>(info.extraBytes) <= s.size();
+      if (ok) {
+        for (int k = 0; k < info.extraBytes && ok; ++k) {
+          const unsigned char cont = static_cast<unsigned char>(s[i + 1 + k]);
+          const unsigned char lo = (k == 0) ? info.lowBound : 0x80;
+          const unsigned char hi = (k == 0) ? info.highBound : 0xBF;
+          ok = cont >= lo && cont <= hi;
+        }
+      }
+      if (ok) {
+        out.append(s.data() + i, 1 + static_cast<size_t>(info.extraBytes));
+        i += 1 + static_cast<size_t>(info.extraBytes);
+      } else {
+        out += kReplacementCharUtf8;
+        ++i; // resync by one byte on a malformed sequence
+      }
     }
   }
   out.push_back('"');
@@ -99,6 +201,9 @@ pp::Roe<void> appendJsonValue(std::string &o, const Value &value, int indent,
 
 pp::Roe<void> appendJsonObject(std::string &o, const Object &m, int indent,
                                int depth, const std::string &path) {
+  if (depth >= kMaxNestingDepth) {
+    return makeErr("max nesting depth exceeded", 0, path);
+  }
   o.push_back('{');
   if (m.empty()) {
     o.push_back('}');
@@ -168,6 +273,7 @@ pp::Roe<void> appendJsonValue(std::string &o, const Value &value, int indent,
             return makeErr("non-finite double cannot be JSON", 0, path);
           }
           std::ostringstream oss;
+          oss.imbue(std::locale::classic());
           oss << std::setprecision(17) << std::defaultfloat << v;
           o += oss.str();
           return {};
@@ -185,6 +291,9 @@ pp::Roe<void> appendJsonValue(std::string &o, const Value &value, int indent,
         if constexpr (std::is_same_v<V, ArrayPtr>) {
           if (!v) {
             return makeErr("null ArrayPtr is invalid; use Null", 0, path);
+          }
+          if (depth >= kMaxNestingDepth) {
+            return makeErr("max nesting depth exceeded", 0, path);
           }
           o.push_back('[');
           const bool pretty = indent >= 0;
@@ -220,7 +329,7 @@ public:
   size_t offset() const { return static_cast<size_t>(p_ - start_); }
 
   void skipWs() {
-    while (p_ < end_ && std::isspace(static_cast<unsigned char>(*p_))) {
+    while (p_ < end_ && isJsonWs(*p_)) {
       ++p_;
     }
   }
@@ -237,15 +346,14 @@ public:
       }
       return Value(std::move(s.value()));
     }
-    if (c == '{') {
-      auto obj = parseObject(path);
-      if (!obj.isOk()) {
-        return obj.error();
+    if (c == '{' || c == '[') {
+      if (depth_ >= kMaxNestingDepth) {
+        return makeErr("max nesting depth exceeded", offset(), path);
       }
-      return Value(std::make_shared<Object>(std::move(obj.value())));
-    }
-    if (c == '[') {
-      return parseArray(path);
+      ++depth_;
+      pp::Roe<Value> result = (c == '{') ? parseObjectValue(path) : parseArray(path);
+      --depth_;
+      return result;
     }
     if (c == 'n' && static_cast<size_t>(end_ - p_) >= 4 &&
         std::string_view(p_, 4) == "null") {
@@ -262,7 +370,7 @@ public:
       p_ += 5;
       return Value(false);
     }
-    if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
+    if (c == '-' || isAsciiDigit(c)) {
       return parseNumber(path);
     }
     return makeErr("expected value", offset(), path);
@@ -272,6 +380,15 @@ private:
   const char *start_;
   const char *p_;
   const char *end_;
+  int depth_ = 0;
+
+  pp::Roe<Value> parseObjectValue(const std::string &path) {
+    auto obj = parseObject(path);
+    if (!obj.isOk()) {
+      return obj.error();
+    }
+    return Value(std::make_shared<Object>(std::move(obj.value())));
+  }
 
   char peek() const { return p_ < end_ ? *p_ : '\0'; }
 
@@ -290,6 +407,32 @@ private:
       return makeErr(std::string("expected '") + c + "'", offset(), path);
     }
     ++p_;
+    return {};
+  }
+
+  // Validates and copies one UTF-8 sequence starting with `first` (already
+  // consumed from p_). Rejects overlong encodings, encoded surrogates, and
+  // code points beyond U+10FFFF, matching the WHATWG/RFC 3629 UTF-8 table.
+  pp::Roe<void> appendValidatedUtf8(std::string &out, unsigned char first,
+                                    const std::string &path) {
+    const Utf8LeadInfo info = ClassifyUtf8Lead(first);
+    if (info.extraBytes < 0) {
+      return makeErr("invalid utf-8 lead byte", offset(), path);
+    }
+    out.push_back(static_cast<char>(first));
+    for (int i = 0; i < info.extraBytes; ++i) {
+      if (p_ >= end_) {
+        return makeErr("truncated utf-8 sequence", offset(), path);
+      }
+      const unsigned char cont = static_cast<unsigned char>(*p_);
+      const unsigned char lo = (i == 0) ? info.lowBound : 0x80;
+      const unsigned char hi = (i == 0) ? info.highBound : 0xBF;
+      if (cont < lo || cont > hi) {
+        return makeErr("invalid utf-8 continuation byte", offset(), path);
+      }
+      out.push_back(static_cast<char>(cont));
+      ++p_;
+    }
     return {};
   }
 
@@ -336,7 +479,15 @@ private:
         return makeErr("unescaped control character in string", offset(), path);
       }
       if (c != '\\') {
-        out.push_back(c);
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (uc < 0x80) {
+          out.push_back(c);
+        } else {
+          auto r = appendValidatedUtf8(out, uc, path);
+          if (!r.isOk()) {
+            return r.error();
+          }
+        }
         continue;
       }
       if (p_ >= end_) {
@@ -405,8 +556,8 @@ private:
     }
     if (peek() == '0') {
       ++p_;
-    } else if (std::isdigit(static_cast<unsigned char>(peek()))) {
-      while (p_ < end_ && std::isdigit(static_cast<unsigned char>(*p_))) {
+    } else if (isAsciiDigit(peek())) {
+      while (p_ < end_ && isAsciiDigit(*p_)) {
         ++p_;
       }
     } else {
@@ -416,10 +567,10 @@ private:
     if (p_ < end_ && *p_ == '.') {
       isFloat = true;
       ++p_;
-      if (p_ >= end_ || !std::isdigit(static_cast<unsigned char>(*p_))) {
+      if (p_ >= end_ || !isAsciiDigit(*p_)) {
         return makeErr("invalid fraction in number", offset(), path);
       }
-      while (p_ < end_ && std::isdigit(static_cast<unsigned char>(*p_))) {
+      while (p_ < end_ && isAsciiDigit(*p_)) {
         ++p_;
       }
     }
@@ -429,10 +580,10 @@ private:
       if (p_ < end_ && (*p_ == '+' || *p_ == '-')) {
         ++p_;
       }
-      if (p_ >= end_ || !std::isdigit(static_cast<unsigned char>(*p_))) {
+      if (p_ >= end_ || !isAsciiDigit(*p_)) {
         return makeErr("invalid exponent in number", offset(), path);
       }
-      while (p_ < end_ && std::isdigit(static_cast<unsigned char>(*p_))) {
+      while (p_ < end_ && isAsciiDigit(*p_)) {
         ++p_;
       }
     }
@@ -442,7 +593,7 @@ private:
       // point; strtod is portable. Token is already JSON-validated.
       char *endPtr = nullptr;
       errno = 0;
-      const double d = std::strtod(num.c_str(), &endPtr);
+      const double d = strtodClassicLocale(num.c_str(), &endPtr);
       if (errno == ERANGE || endPtr != num.c_str() + num.size() ||
           !std::isfinite(d)) {
         return makeErr("invalid floating-point number", offset(), path);
@@ -558,7 +709,10 @@ pp::Roe<Value> valueFromJsonString(const std::string &json) {
 std::string objectToJsonString(const Object &o, int indent) {
   auto r = valueToJsonString(Value(std::make_shared<Object>(o)), indent);
   if (!r.isOk()) {
-    return std::string("{\"error\":") + "\"" + r.error().message + "\"}";
+    std::string out = "{\"error\":";
+    appendEscapedJsonString(out, r.error().message);
+    out.push_back('}');
+    return out;
   }
   return std::move(r.value());
 }

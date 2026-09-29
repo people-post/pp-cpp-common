@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -52,23 +53,39 @@ public:
   size_t TotalQueuedCount() const;
 
 private:
+  // Everything a worker thread touches after Shutdown()'s join budget expires
+  // lives here instead of on the WorkerPool, and each worker thread captures
+  // a shared_ptr to it. If Shutdown() has to detach a stuck worker (see
+  // Shutdown()'s doc comment), the WorkerPool — and thus its mutex_/cv_/queues
+  // — may be destroyed while that thread is still running; keeping this state
+  // alive via shared_ptr instead means the detached thread never touches
+  // freed memory, at the cost of leaking this block until the thread exits.
+  struct SharedState {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::deque<std::function<void()>> critical_queue;
+    std::deque<std::function<void()>> normal_queue;
+    std::deque<std::function<void()>> background_queue;
+    bool stopped = false;
+    bool paused = false;
+    std::atomic<size_t> live_workers{0};
+    // Independent copy (not a reference to the WorkerPool's Module::log()) so
+    // a detached worker can still log after the WorkerPool is gone.
+    logging::Logger logger;
+
+    explicit SharedState(logging::Logger log) : logger(std::move(log)) {}
+  };
+
   static size_t ClampThreadCount(size_t thread_count);
-  void WorkerMain(size_t worker_index);
-  bool DequeueOneLocked(std::function<void()>* out);
-  bool HasWorkLocked() const;
-  void EnqueueLocked(WorkerLane lane, std::function<void()> task);
-  void RunTaskSafely(std::function<void()>& task);
+  static void WorkerMain(std::shared_ptr<SharedState> state, size_t worker_index);
+  static bool DequeueOneLocked(SharedState& state, std::function<void()>* out);
+  static bool HasWorkLocked(const SharedState& state);
+  static void EnqueueLocked(SharedState& state, WorkerLane lane, std::function<void()> task);
+  static void RunTaskSafely(logging::Logger& logger, std::function<void()>& task);
 
   const size_t thread_count_;
+  const std::shared_ptr<SharedState> state_;
   std::vector<std::thread> threads_;
-  mutable std::mutex mutex_;
-  std::condition_variable cv_;
-  std::deque<std::function<void()>> critical_queue_;
-  std::deque<std::function<void()>> normal_queue_;
-  std::deque<std::function<void()>> background_queue_;
-  bool stopped_ = false;
-  bool paused_ = false;
-  std::atomic<size_t> live_workers_{0};
 };
 
 template <typename Result>

@@ -37,12 +37,14 @@ size_t WorkerPool::ClampThreadCount(const size_t thread_count) {
 }
 
 WorkerPool::WorkerPool(const size_t thread_count)
-    : thread_count_(ClampThreadCount(thread_count)) {
+    : thread_count_(ClampThreadCount(thread_count)),
+      state_(std::make_shared<SharedState>(log())) {
   redirectLogger("WorkerPool");
-  live_workers_.store(thread_count_, std::memory_order_relaxed);
+  state_->logger = log(); // refresh the copy now that redirectLogger has run
+  state_->live_workers.store(thread_count_, std::memory_order_relaxed);
   threads_.reserve(thread_count_);
   for (size_t i = 0; i < thread_count_; ++i) {
-    threads_.emplace_back([this, i]() { WorkerMain(i); });
+    threads_.emplace_back([state = state_, i]() { WorkerMain(state, i); });
   }
 }
 
@@ -56,50 +58,50 @@ void WorkerPool::Post(WorkerLane lane, std::function<void()> task) {
   }
 
   {
-    std::lock_guard lock(mutex_);
-    if (stopped_) {
+    std::lock_guard lock(state_->mutex);
+    if (state_->stopped) {
       return;
     }
-    EnqueueLocked(lane, std::move(task));
+    EnqueueLocked(*state_, lane, std::move(task));
   }
-  cv_.notify_one();
+  state_->cv.notify_one();
 }
 
 void WorkerPool::Pause() {
-  std::lock_guard lock(mutex_);
-  paused_ = true;
+  std::lock_guard lock(state_->mutex);
+  state_->paused = true;
 }
 
 void WorkerPool::Resume() {
   {
-    std::lock_guard lock(mutex_);
-    paused_ = false;
+    std::lock_guard lock(state_->mutex);
+    state_->paused = false;
   }
-  cv_.notify_all();
+  state_->cv.notify_all();
 }
 
 bool WorkerPool::Shutdown(std::chrono::milliseconds join_budget) {
   {
-    std::lock_guard lock(mutex_);
-    if (stopped_) {
-      return live_workers_.load(std::memory_order_acquire) == 0 && threads_.empty();
+    std::lock_guard lock(state_->mutex);
+    if (state_->stopped) {
+      return state_->live_workers.load(std::memory_order_acquire) == 0 && threads_.empty();
     }
-    stopped_ = true;
-    critical_queue_.clear();
-    normal_queue_.clear();
-    background_queue_.clear();
+    state_->stopped = true;
+    state_->critical_queue.clear();
+    state_->normal_queue.clear();
+    state_->background_queue.clear();
   }
-  cv_.notify_all();
+  state_->cv.notify_all();
 
   const auto deadline = std::chrono::steady_clock::now() + join_budget;
   {
-    std::unique_lock lock(mutex_);
-    cv_.wait_until(lock, deadline, [this]() {
-      return live_workers_.load(std::memory_order_acquire) == 0;
+    std::unique_lock lock(state_->mutex);
+    state_->cv.wait_until(lock, deadline, [this]() {
+      return state_->live_workers.load(std::memory_order_acquire) == 0;
     });
   }
 
-  const bool all_exited = live_workers_.load(std::memory_order_acquire) == 0;
+  const bool all_exited = state_->live_workers.load(std::memory_order_acquire) == 0;
   bool ok = true;
   for (std::thread& thread : threads_) {
     if (!thread.joinable()) {
@@ -109,6 +111,9 @@ bool WorkerPool::Shutdown(std::chrono::milliseconds join_budget) {
       thread.join();
       continue;
     }
+    // state_ is a shared_ptr each worker also holds, so detaching here never
+    // leaves the worker touching WorkerPool memory after `this` is destroyed
+    // — only the (intentionally leaked) SharedState block outlives it.
     log().error << "WorkerPool::Shutdown: worker still live after " << join_budget.count()
                 << "ms — detaching (process exit must follow)";
     thread.detach();
@@ -119,24 +124,25 @@ bool WorkerPool::Shutdown(std::chrono::milliseconds join_budget) {
 }
 
 size_t WorkerPool::QueuedCount(const WorkerLane lane) const {
-  std::lock_guard lock(mutex_);
+  std::lock_guard lock(state_->mutex);
   switch (lane) {
   case WorkerLane::Critical:
-    return critical_queue_.size();
+    return state_->critical_queue.size();
   case WorkerLane::Normal:
-    return normal_queue_.size();
+    return state_->normal_queue.size();
   case WorkerLane::Background:
-    return background_queue_.size();
+    return state_->background_queue.size();
   }
   return 0;
 }
 
 size_t WorkerPool::TotalQueuedCount() const {
-  std::lock_guard lock(mutex_);
-  return critical_queue_.size() + normal_queue_.size() + background_queue_.size();
+  std::lock_guard lock(state_->mutex);
+  return state_->critical_queue.size() + state_->normal_queue.size() +
+         state_->background_queue.size();
 }
 
-void WorkerPool::WorkerMain(const size_t worker_index) {
+void WorkerPool::WorkerMain(std::shared_ptr<SharedState> state, const size_t worker_index) {
   // CRT/pthread shim — see docs/architecture/PLATFORM_CODE.md (allowlisted in common/).
 #if defined(__ANDROID__) || defined(__linux__)
   const std::string name = "pp-worker-" + std::to_string(worker_index);
@@ -148,30 +154,32 @@ void WorkerPool::WorkerMain(const size_t worker_index) {
   for (;;) {
     std::function<void()> task;
     {
-      std::unique_lock lock(mutex_);
-      cv_.wait(lock, [this]() { return stopped_ || (!paused_ && HasWorkLocked()); });
-      // Once Shutdown sets stopped_, never dequeue — queued work was dropped under the same lock.
-      if (stopped_) {
-        live_workers_.fetch_sub(1, std::memory_order_acq_rel);
-        cv_.notify_all();
+      std::unique_lock lock(state->mutex);
+      state->cv.wait(lock, [&state]() {
+        return state->stopped || (!state->paused && HasWorkLocked(*state));
+      });
+      // Once Shutdown sets stopped, never dequeue — queued work was dropped under the same lock.
+      if (state->stopped) {
+        state->live_workers.fetch_sub(1, std::memory_order_acq_rel);
+        state->cv.notify_all();
         break;
       }
-      if (paused_ || !DequeueOneLocked(&task)) {
+      if (state->paused || !DequeueOneLocked(*state, &task)) {
         continue;
       }
     }
-    RunTaskSafely(task);
+    RunTaskSafely(state->logger, task);
   }
 }
 
-bool WorkerPool::DequeueOneLocked(std::function<void()>* out) {
+bool WorkerPool::DequeueOneLocked(SharedState& state, std::function<void()>* out) {
   std::deque<std::function<void()>>* queue = nullptr;
-  if (!critical_queue_.empty()) {
-    queue = &critical_queue_;
-  } else if (!normal_queue_.empty()) {
-    queue = &normal_queue_;
-  } else if (!background_queue_.empty()) {
-    queue = &background_queue_;
+  if (!state.critical_queue.empty()) {
+    queue = &state.critical_queue;
+  } else if (!state.normal_queue.empty()) {
+    queue = &state.normal_queue;
+  } else if (!state.background_queue.empty()) {
+    queue = &state.background_queue;
   } else {
     return false;
   }
@@ -181,26 +189,27 @@ bool WorkerPool::DequeueOneLocked(std::function<void()>* out) {
   return static_cast<bool>(*out);
 }
 
-bool WorkerPool::HasWorkLocked() const {
-  return !critical_queue_.empty() || !normal_queue_.empty() || !background_queue_.empty();
+bool WorkerPool::HasWorkLocked(const SharedState& state) {
+  return !state.critical_queue.empty() || !state.normal_queue.empty() ||
+         !state.background_queue.empty();
 }
 
-void WorkerPool::EnqueueLocked(WorkerLane lane, std::function<void()> task) {
+void WorkerPool::EnqueueLocked(SharedState& state, WorkerLane lane, std::function<void()> task) {
   std::deque<std::function<void()>>* const queue =
-      QueueForLane(lane, &critical_queue_, &normal_queue_, &background_queue_);
+      QueueForLane(lane, &state.critical_queue, &state.normal_queue, &state.background_queue);
   queue->push_back(std::move(task));
 }
 
-void WorkerPool::RunTaskSafely(std::function<void()>& task) {
+void WorkerPool::RunTaskSafely(logging::Logger& logger, std::function<void()>& task) {
   if (!task) {
     return;
   }
   try {
     task();
   } catch (const std::exception& e) {
-    log().error << "Uncaught exception in worker task: " << e.what();
+    logger.error << "Uncaught exception in worker task: " << e.what();
   } catch (...) {
-    log().error << "Uncaught unknown exception in worker task";
+    logger.error << "Uncaught unknown exception in worker task";
   }
 }
 

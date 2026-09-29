@@ -28,6 +28,11 @@ if(MSVC)
   target_compile_definitions(pp_common PUBLIC NOMINMAX)
 endif()
 
+if(WIN32)
+  # BCryptGenRandom (Utilities.cpp GenerateUuid).
+  target_link_libraries(pp_common PRIVATE bcrypt)
+endif()
+
 include(GNUInstallDirs)
 install(TARGETS pp_common
   EXPORT pp_commonTargets
@@ -54,6 +59,7 @@ if(PP_COMMON_BUILD_TESTS)
   add_executable(pp_common_test
     tests/civil_time_test.cpp
     tests/logger_emit_floor_test.cpp
+    tests/utilities_test.cpp
     tests/value_meta_test.cpp
     tests/worker_pool_test.cpp)
   target_link_libraries(pp_common_test PRIVATE

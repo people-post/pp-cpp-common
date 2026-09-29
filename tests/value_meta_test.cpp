@@ -5,9 +5,13 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <limits>
+#include <map>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <vector>
 
 using pp::common::Array;
 using pp::common::ArrayPtr;
@@ -176,8 +180,11 @@ TEST(MetaTest, DuplicateKeys_AreRejected) {
     ar & key & ValueWire::TAG_U64 & payload;
   }
 
+  // A duplicate key is malformed input: decode must fail, not silently
+  // succeed with an empty Object (that used to leave callers checking only
+  // isOk() unable to tell "empty object" from "corrupt wire data").
   Object out;
-  EXPECT_TRUE(archiveUnpack(oss.str(), out));
+  EXPECT_FALSE(archiveUnpack(oss.str(), out));
   EXPECT_TRUE(out.empty());
 }
 
@@ -335,4 +342,280 @@ TEST(MetaTest, Json_RootNull) {
   auto r = valueFromJsonString("null");
   ASSERT_TRUE(r.isOk());
   EXPECT_TRUE(std::holds_alternative<Null>(r.value()));
+}
+
+TEST(MetaTest, Json_DeeplyNestedArrayIsRejectedNotCrashed) {
+  // 100k levels would blow the stack pre-fix; must fail cleanly instead.
+  std::string deep(100000, '[');
+  deep.append(100000, ']');
+  auto r = valueFromJsonString(deep);
+  EXPECT_FALSE(r.isOk());
+}
+
+TEST(MetaTest, Json_DeeplyNestedObjectIsRejectedNotCrashed) {
+  std::string deep;
+  for (int i = 0; i < 100000; ++i) {
+    deep += R"({"a":)";
+  }
+  deep += "null";
+  deep.append(100000, '}');
+  auto r = valueFromJsonString(deep);
+  EXPECT_FALSE(r.isOk());
+}
+
+TEST(MetaTest, Json_ModeratelyNestedArrayStillParses) {
+  constexpr int kDepth = 100; // under the 128 cap
+  std::string deep(kDepth, '[');
+  deep += "1";
+  deep.append(kDepth, ']');
+  auto r = valueFromJsonString(deep);
+  ASSERT_TRUE(r.isOk());
+}
+
+TEST(MetaTest, Json_Utf8_RejectsOverlongEncoding) {
+  // 2-byte overlong encoding of NUL (0xC0 0x80).
+  const std::string bad = std::string("\"") + "\xC0\x80" + "\"";
+  EXPECT_FALSE(valueFromJsonString(bad).isOk());
+}
+
+TEST(MetaTest, Json_Utf8_RejectsEncodedSurrogate) {
+  // 3-byte encoding of U+D800 (surrogate): ED A0 80.
+  const std::string bad = std::string("\"") + "\xED\xA0\x80" + "\"";
+  EXPECT_FALSE(valueFromJsonString(bad).isOk());
+}
+
+TEST(MetaTest, Json_Utf8_RejectsCodePointAboveMax) {
+  // 4-byte encoding above U+10FFFF: F4 90 80 80.
+  const std::string bad = std::string("\"") + "\xF4\x90\x80\x80" + "\"";
+  EXPECT_FALSE(valueFromJsonString(bad).isOk());
+}
+
+TEST(MetaTest, Json_Utf8_RejectsTruncatedSequence) {
+  const std::string bad = std::string("\"") + "\xE4\xB8" + "\""; // missing 3rd byte
+  EXPECT_FALSE(valueFromJsonString(bad).isOk());
+}
+
+TEST(MetaTest, Json_Utf8_AcceptsValidMultiByte) {
+  const std::string ok = std::string("\"") + "\xE4\xB8\x96\xE7\x95\x8C" + "\""; // "世界"
+  auto r = valueFromJsonString(ok);
+  ASSERT_TRUE(r.isOk());
+  EXPECT_EQ(std::get<std::string>(r.value()), "世界");
+}
+
+TEST(MetaTest, Json_EncodeSanitizesInvalidUtf8InStringValue) {
+  // A string built without going through the JSON parser (e.g. wire-decoded)
+  // can contain invalid UTF-8. objectToJsonString must still produce output
+  // this library's own parser can read back, substituting U+FFFD for the bad
+  // byte(s) instead of emitting broken UTF-8 verbatim.
+  Object m;
+  m.set("k", std::string("a\xC0\x80""b")); // overlong-encoded NUL in the middle
+  const std::string j = objectToJsonString(m);
+  auto reparsed = valueFromJsonString(j);
+  ASSERT_TRUE(reparsed.isOk()) << "objectToJsonString produced invalid JSON: " << j;
+  auto *obj = std::get_if<ObjectPtr>(&reparsed.value());
+  ASSERT_TRUE(obj && *obj);
+  auto v = (*obj)->getString("k");
+  ASSERT_TRUE(v.has_value());
+  // Each invalid byte (0xC0, then the now-isolated 0x80) is replaced on its
+  // own, so the two-byte overlong sequence becomes two U+FFFD.
+  EXPECT_EQ(*v, "a\xEF\xBF\xBD\xEF\xBF\xBD""b");
+}
+
+TEST(MetaTest, Json_EncodeSanitizesInvalidUtf8InObjectKey) {
+  // Same, but for the error-message path (which can embed a raw object key).
+  Object m;
+  m.set(std::string("bad\xFF""key"), Value(std::numeric_limits<double>::quiet_NaN()));
+  const std::string j = objectToJsonString(m);
+  auto reparsed = valueFromJsonString(j);
+  ASSERT_TRUE(reparsed.isOk()) << "objectToJsonString produced invalid JSON: " << j;
+}
+
+TEST(MetaTest, Json_NestingDepthBoundaryIsConsistentBetweenEncodeAndParse) {
+  // A Value tree built directly at exactly the parser's accepted depth must
+  // also be encodable, and re-parsing the result must be rejected the same
+  // way the original 128-deep text is (encode/parse off-by-one regression).
+  constexpr int kDepth = 128;
+  std::string text(kDepth, '[');
+  text += "1";
+  text.append(kDepth, ']');
+  auto parsed = valueFromJsonString(text);
+  ASSERT_TRUE(parsed.isOk());
+
+  auto encoded = valueToJsonString(parsed.value());
+  ASSERT_TRUE(encoded.isOk());
+  EXPECT_EQ(encoded.value(), text);
+}
+
+TEST(MetaTest, Wire_SetRejectsDuplicateElement) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t entryCount = 2;
+  ar & entryCount;
+  std::string a = "dup";
+  std::string b = "dup";
+  ar & a;
+  ar & b;
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::set<std::string> s;
+  iar & s;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_UnorderedSetRejectsDuplicateElement) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t entryCount = 2;
+  ar & entryCount;
+  int64_t a = 7;
+  int64_t b = 7;
+  ar & a;
+  ar & b;
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::unordered_set<int64_t> s;
+  iar & s;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Json_WhitespaceRejectsFormFeedAndVerticalTab) {
+  // JSON only allows space/\t/\n/\r between tokens; \f and \v are not valid
+  // whitespace even though std::isspace accepts them.
+  EXPECT_FALSE(valueFromJsonString("\f1").isOk());
+  EXPECT_FALSE(valueFromJsonString("\v1").isOk());
+  EXPECT_TRUE(valueFromJsonString(" \t\r\n1").isOk());
+}
+
+TEST(MetaTest, Json_ErrorMessageIsEscapedInOutput) {
+  // The error path used to splice the raw error message (which can embed an
+  // object key) into the JSON error object without escaping it.
+  Object m;
+  m.set("bad\"key", Value(std::numeric_limits<double>::quiet_NaN()));
+  const std::string j = objectToJsonString(m);
+  auto reparsed = valueFromJsonString(j);
+  ASSERT_TRUE(reparsed.isOk()) << "objectToJsonString produced invalid JSON: " << j;
+}
+
+TEST(MetaTest, Wire_BoolRejectsNonCanonicalByte) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint8_t raw = 0xFF; // neither 0 nor 1
+  ar & raw;
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  bool value = false;
+  iar & value;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_MapRejectsDuplicateKey) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t entryCount = 2;
+  ar & entryCount;
+  std::string key = "dup";
+  int64_t v1 = 1;
+  int64_t v2 = 2;
+  ar & key & v1;
+  ar & key & v2;
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::map<std::string, int64_t> m;
+  iar & m;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_VectorWithHugeDeclaredSizeFailsInsteadOfOOM) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t hugeSize = std::numeric_limits<uint64_t>::max() / 2;
+  ar & hugeSize;
+  // No actual element bytes follow.
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::vector<uint8_t> v;
+  iar & v;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_StringSizeExceedingActualDataFails) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t declaredSize = 63ull * 1024 * 1024; // under MAX_STRING_SIZE, but far
+                                               // more than the bytes present
+  ar & declaredSize;
+  // Only a few bytes actually follow.
+  oss.write("ab", 2);
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::string s;
+  iar & s;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_StringSizeAboveMaxIsRejectedWithoutReading) {
+  std::ostringstream oss(std::ios::binary);
+  OutputArchive ar(oss);
+  uint64_t tooLarge = 65ull * 1024 * 1024; // over the 64MB MAX_STRING_SIZE cap
+  ar & tooLarge;
+  // No payload bytes follow; a correct implementation must reject the
+  // declared size itself rather than trying to read.
+
+  std::istringstream iss(oss.str(), std::ios::binary);
+  InputArchive iar(iss);
+  std::string s;
+  iar & s;
+  EXPECT_TRUE(iar.failed());
+}
+
+TEST(MetaTest, Wire_ArrayValueRejectsTrailingBytes) {
+  // Build a TAG_ARRAY ValueWire whose payload has one extra byte after a
+  // well-formed 0-element array.
+  std::ostringstream p(std::ios::binary);
+  OutputArchive par(p);
+  uint64_t n = 0;
+  par & n;
+  std::string payload = p.str();
+  payload.push_back('\x7f'); // trailing garbage
+
+  ValueWire wire;
+  wire.tag = ValueWire::TAG_ARRAY;
+  wire.payload = payload;
+
+  std::optional<Value> out;
+  EXPECT_FALSE(wireToValue(wire, out));
+}
+
+TEST(MetaTest, Wire_ArrayRecursionDepthIsBounded) {
+  // Build ~300 nested single-element arrays iteratively (so *this test*
+  // doesn't recurse) and confirm wireToValue rejects the result instead of
+  // overflowing the stack itself while decoding it.
+  ValueWire wire;
+  wire.tag = ValueWire::TAG_ARRAY;
+  {
+    std::ostringstream p(std::ios::binary);
+    OutputArchive par(p);
+    uint64_t n = 0;
+    par & n;
+    wire.payload = p.str();
+  }
+  for (int i = 0; i < 300; ++i) {
+    std::ostringstream p(std::ios::binary);
+    OutputArchive par(p);
+    uint64_t n = 1;
+    par & n;
+    par & wire;
+    ValueWire outer;
+    outer.tag = ValueWire::TAG_ARRAY;
+    outer.payload = p.str();
+    wire = outer;
+  }
+
+  std::optional<Value> out;
+  EXPECT_FALSE(wireToValue(wire, out));
 }
