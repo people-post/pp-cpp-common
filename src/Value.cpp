@@ -9,6 +9,22 @@
 
 namespace pp::common {
 
+namespace {
+
+// Bounds wireToValue's recursion (through nested TAG_ARRAY/TAG_OBJECT decode)
+// so a malicious deeply-nested payload cannot exhaust the C++ call stack.
+// RAII rather than an explicit parameter: wireToValue's signature is public
+// API and Object::serialize (Value.h, header-only) also recurses into it.
+constexpr int kMaxWireDepth = 128;
+thread_local int g_wireDepth = 0;
+
+struct WireDepthGuard {
+  WireDepthGuard() { ++g_wireDepth; }
+  ~WireDepthGuard() { --g_wireDepth; }
+};
+
+} // namespace
+
 Value makeArray(std::vector<Value> elements) {
   auto a = std::make_shared<Array>();
   a->elements = std::move(elements);
@@ -118,6 +134,10 @@ ValueWire valueToWire(const Value &v) {
 
 bool wireToValue(const ValueWire &w, std::optional<Value> &out) {
   out = std::nullopt;
+  if (g_wireDepth >= kMaxWireDepth) {
+    return false;
+  }
+  WireDepthGuard depthGuard;
   switch (w.tag) {
   case ValueWire::TAG_NULL:
     out = Null{};
@@ -197,6 +217,9 @@ bool wireToValue(const ValueWire &w, std::optional<Value> &out) {
         return false;
       }
       arr->elements.push_back(std::move(*ev));
+    }
+    if (!ar.exactEnd()) {
+      return false;
     }
     out = ArrayPtr(std::move(arr));
     return true;

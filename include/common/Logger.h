@@ -1,6 +1,7 @@
 #ifndef PP_COMMON_LOGGER_H
 #define PP_COMMON_LOGGER_H
 
+#include <atomic>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -104,20 +105,30 @@ public:
   explicit LoggerNode(const std::string &name);
   ~LoggerNode() = default;
 
-  void setLevel(Level level) { level_ = level; }
-  Level getLevel() const { return level_; }
+  void setLevel(Level level) { level_.store(level, std::memory_order_relaxed); }
+  Level getLevel() const { return level_.load(std::memory_order_relaxed); }
 
   void addHandler(std::shared_ptr<Handler> spHandler);
   void addFileHandler(const std::string &filename, Level level);
 
-  void setPropagate(bool propagate) { propagate_ = propagate; }
-  bool getPropagate() const { return propagate_; }
+  void setPropagate(bool propagate) { propagate_.store(propagate, std::memory_order_relaxed); }
+  bool getPropagate() const { return propagate_.load(std::memory_order_relaxed); }
 
-  void setParent(std::weak_ptr<LoggerNode> parent) { parent_ = std::move(parent); }
-  std::shared_ptr<LoggerNode> getParent() const { return parent_.lock(); }
+  void setParent(std::weak_ptr<LoggerNode> parent) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    parent_ = std::move(parent);
+  }
+  std::shared_ptr<LoggerNode> getParent() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return parent_.lock();
+  }
   void addChild(std::shared_ptr<LoggerNode> child);
   void removeChild(LoggerNode* child);
-  const std::vector<std::shared_ptr<LoggerNode>>& getChildren() const { return spChildren_; }
+  /** Snapshot copy (not a reference) — callers may run concurrently with addChild/removeChild. */
+  std::vector<std::shared_ptr<LoggerNode>> getChildren() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return spChildren_;
+  }
 
   void log(Level level, const std::string &message);
 
@@ -129,18 +140,16 @@ public:
 private:
   std::shared_ptr<LoggerNode> getOrInitDirectChild(const std::string& name);
 
-  void logToHandlers(Level level, const std::string &message);
   void logWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName);
   void logToHandlersWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName);
-  std::string formatMessage(Level level, const std::string &message);
   std::string formatMessage(Level level, const std::string &message, const std::string &originatingLoggerName);
   std::string levelToString(Level level);
 
   std::string name_;
-  std::weak_ptr<LoggerNode> parent_;
-  Level level_{ Level::DEBUG };
-  bool propagate_{ true };
-  std::vector<std::shared_ptr<LoggerNode>> spChildren_;
+  std::weak_ptr<LoggerNode> parent_;        // guarded by mutex_
+  std::atomic<Level> level_{ Level::DEBUG };
+  std::atomic<bool> propagate_{ true };
+  std::vector<std::shared_ptr<LoggerNode>> spChildren_; // guarded by mutex_
   std::vector<std::shared_ptr<Handler>> spHandlers_;
   mutable std::mutex mutex_;
 };
@@ -158,6 +167,16 @@ class Logger {
 public:
   explicit Logger(std::shared_ptr<LoggerNode> node);
   ~Logger() = default;
+
+  // LogProxy members bind a raw `this` pointer back to their owning Logger, so
+  // a naive compiler-generated copy would leave the copy's proxies pointing at
+  // the original object (or a moved-from one). Rebind them to `this` instead
+  // of copying/moving the source's proxy state (which is just logger_+level_,
+  // already correct for a freshly constructed proxy here).
+  Logger(const Logger &other);
+  Logger &operator=(const Logger &other);
+  Logger(Logger &&other) noexcept;
+  Logger &operator=(Logger &&other) noexcept;
 
   LogProxy debug;
   LogProxy info;

@@ -42,10 +42,11 @@ std::string getCurrentTimestamp() {
 } // namespace
 
 // DEBUG = no boost (max with any call-site level leaves it unchanged).
-static Level g_emit_floor = kLevelDebug;
+static std::atomic<Level> g_emit_floor{kLevelDebug};
 
 static Level ApplyEmitFloor(Level level) {
-  return level < g_emit_floor ? g_emit_floor : level;
+  const Level floor = g_emit_floor.load(std::memory_order_relaxed);
+  return level < floor ? floor : level;
 }
 
 void ConsoleHandler::emit(Level level, const std::string &loggerName,
@@ -173,15 +174,6 @@ void LoggerNode::logWithOriginatingName(Level level, const std::string &message,
   }
 }
 
-void LoggerNode::logToHandlers(Level level, const std::string &message) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  std::string formattedMessage = formatMessage(level, message);
-
-  for (auto &spHandler : spHandlers_) {
-    spHandler->emit(level, name_, formattedMessage);
-  }
-}
-
 void LoggerNode::logToHandlersWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::string formattedMessage = formatMessage(level, message, originatingLoggerName);
@@ -189,18 +181,6 @@ void LoggerNode::logToHandlersWithOriginatingName(Level level, const std::string
   for (auto &spHandler : spHandlers_) {
     spHandler->emit(level, originatingLoggerName, formattedMessage);
   }
-}
-
-std::string LoggerNode::formatMessage(Level level, const std::string &message) {
-  std::stringstream ss;
-  ss << "[" << getCurrentTimestamp() << "] ";
-  ss << "[" << levelToString(level) << "] ";
-  std::string fullName = getFullName();
-  if (!fullName.empty()) {
-    ss << "[" << fullName << "] ";
-  }
-  ss << message;
-  return ss.str();
 }
 
 std::string LoggerNode::formatMessage(Level level, const std::string &message, const std::string &originatingLoggerName) {
@@ -303,6 +283,41 @@ Logger::Logger(std::shared_ptr<LoggerNode> node)
       critical(this, Level::CRITICAL) {
 }
 
+// The LogProxy members always bind to `this` (not to `other`), so copy/move
+// only needs to move spNode_ over; the proxies are already correctly bound by
+// their member-initializer-list construction above.
+Logger::Logger(const Logger &other)
+    : spNode_(other.spNode_),
+      debug(this, kLevelDebug),
+      info(this, Level::INFO),
+      warning(this, Level::WARNING),
+      error(this, kLevelError),
+      critical(this, Level::CRITICAL) {
+}
+
+Logger &Logger::operator=(const Logger &other) {
+  if (this != &other) {
+    spNode_ = other.spNode_;
+  }
+  return *this;
+}
+
+Logger::Logger(Logger &&other) noexcept
+    : spNode_(std::move(other.spNode_)),
+      debug(this, kLevelDebug),
+      info(this, Level::INFO),
+      warning(this, Level::WARNING),
+      error(this, kLevelError),
+      critical(this, Level::CRITICAL) {
+}
+
+Logger &Logger::operator=(Logger &&other) noexcept {
+  if (this != &other) {
+    spNode_ = std::move(other.spNode_);
+  }
+  return *this;
+}
+
 void Logger::redirectTo(const std::string &targetLoggerName) {
   auto targetLogger = logging::getLogger(targetLoggerName);
   if (!targetLogger.getNode()) {
@@ -365,11 +380,11 @@ void setLevel(Level level) {
 }
 
 Level getEmitFloor() {
-  return g_emit_floor;
+  return g_emit_floor.load(std::memory_order_relaxed);
 }
 
 void setEmitFloor(Level floor) {
-  g_emit_floor = floor;
+  g_emit_floor.store(floor, std::memory_order_relaxed);
 }
 
 } // namespace logging
