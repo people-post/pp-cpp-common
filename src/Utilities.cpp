@@ -11,9 +11,11 @@
 // CRT/Windows shim — see docs/architecture/PLATFORM_CODE.md (allowlisted in common/).
 #include <windows.h>
 #include <bcrypt.h>
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) || defined(__ANDROID__)
+// Android before __linux__ (bionic defines both): getrandom() is only declared from API 28, while
+// arc4random_buf() is in bionic <stdlib.h> at every API level (pp-browser builds for android-24).
 #include <cstdlib> // arc4random_buf
-#elif defined(__linux__) || defined(__ANDROID__)
+#elif defined(__linux__)
 #include <cerrno>
 #include <sys/random.h>
 #else
@@ -35,9 +37,9 @@ void FillRandomBytes(uint8_t *bytes, size_t count) {
   if (status != 0 /* STATUS_SUCCESS */) {
     throw std::runtime_error("BCryptGenRandom failed");
   }
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) || defined(__ANDROID__)
   arc4random_buf(bytes, count);
-#elif defined(__linux__) || defined(__ANDROID__)
+#elif defined(__linux__)
   size_t filled = 0;
   while (filled < count) {
     const ssize_t n = getrandom(bytes + filled, count - filled, 0);
