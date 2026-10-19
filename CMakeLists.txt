@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(pp-cpp-common VERSION 1.0.0 LANGUAGES CXX)
+project(pp-cpp-common VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,7 +11,9 @@ add_library(pp_common STATIC
   src/CivilTime.cpp
   src/Logger.cpp
   src/Module.cpp
+  src/ManualExecutor.cpp
   src/SequencedTaskRunner.cpp
+  src/SerialExecutor.cpp
   src/ThreadExecutor.cpp
   src/Utilities.cpp
   src/Value.cpp
@@ -61,6 +63,7 @@ if(PP_COMMON_BUILD_TESTS)
     tests/civil_time_test.cpp
     tests/executor_test.cpp
     tests/lifetime_test.cpp
+    tests/serial_executor_test.cpp
     tests/logger_emit_floor_test.cpp
     tests/utilities_test.cpp
     tests/value_meta_test.cpp
