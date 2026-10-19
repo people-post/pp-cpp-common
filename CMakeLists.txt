@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(pp-cpp-common VERSION 1.1.0 LANGUAGES CXX)
+project(pp-cpp-common VERSION 1.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,10 +8,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(PP_COMMON_BUILD_TESTS "Build pp-cpp-common unit tests" OFF)
 
 add_library(pp_common STATIC
+  src/AtomicFileWrite.cpp
   src/CivilTime.cpp
   src/Logger.cpp
   src/Module.cpp
   src/ManualExecutor.cpp
+  src/MetricsRegistry.cpp
   src/SequencedTaskRunner.cpp
   src/SerialExecutor.cpp
   src/ThreadExecutor.cpp
@@ -60,11 +62,14 @@ if(PP_COMMON_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
 
   add_executable(pp_common_test
+    tests/atomic_file_write_test.cpp
     tests/civil_time_test.cpp
     tests/executor_test.cpp
+    tests/helpers_test.cpp
     tests/lifetime_test.cpp
     tests/serial_executor_test.cpp
     tests/logger_emit_floor_test.cpp
+    tests/metrics_registry_test.cpp
     tests/utilities_test.cpp
     tests/value_meta_test.cpp
     tests/worker_pool_test.cpp)

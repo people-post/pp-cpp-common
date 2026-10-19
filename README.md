@@ -9,6 +9,7 @@ Shared C++ foundation for People Post apps (`namespace pp`).
 - `WorkerPool`, `SequencedTaskRunner`
 - `Executor` (where tasks run: `ThreadExecutor`, `WorkerLaneExecutor`, `SequencedTaskRunner`) — libraries take the executors they run on from the app
 - `SerialExecutor` (one thread: `PostAfter` timers, `RunAndWait` for lifecycle edges) — `ThreadExecutor`, and `ManualExecutor` for deterministic tests (a queue and a clock the test drives)
+- `ValueJson` (parse / dump / typed reads / deep merge over `Value`), `AtomicFileWrite` (temp + fsync + rename; owner-only on POSIX), `SettledWait` (one-shot cross-thread result), `CodedFailure` (a layer's coded error enum in `Roe`), `MetricsRegistry` (counters / gauges / histograms, Prometheus text)
 - `Lifetime` — keeps posted work from reaching an object that stopped or went away (`Bind` / `Invalidate`; `InvalidateAndWait` across threads)
 - `CivilTime`, `Utilities`
 - Binary wire helpers (`Serialize`, `BinaryPack`)
