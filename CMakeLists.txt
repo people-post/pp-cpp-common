@@ -12,6 +12,7 @@ add_library(pp_common STATIC
   src/Logger.cpp
   src/Module.cpp
   src/SequencedTaskRunner.cpp
+  src/ThreadExecutor.cpp
   src/Utilities.cpp
   src/Value.cpp
   src/WorkerPool.cpp
@@ -58,6 +59,8 @@ if(PP_COMMON_BUILD_TESTS)
 
   add_executable(pp_common_test
     tests/civil_time_test.cpp
+    tests/executor_test.cpp
+    tests/lifetime_test.cpp
     tests/logger_emit_floor_test.cpp
     tests/utilities_test.cpp
     tests/value_meta_test.cpp
