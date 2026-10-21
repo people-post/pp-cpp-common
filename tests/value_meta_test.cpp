@@ -480,6 +480,36 @@ TEST(MetaTest, Wire_UnorderedSetRejectsDuplicateElement) {
   EXPECT_TRUE(iar.failed());
 }
 
+TEST(MetaTest, Wire_StringReadIsBoundedByInput) {
+  // A declared length larger than the input fails, and a string spanning
+  // several read chunks still round-trips.
+  {
+    std::ostringstream oss(std::ios::binary);
+    OutputArchive ar(oss);
+    uint64_t declared = 32ull * 1024 * 1024;
+    ar & declared;
+    std::istringstream iss(oss.str() + "abc", std::ios::binary);
+    InputArchive iar(iss);
+    std::string s;
+    iar & s;
+    EXPECT_TRUE(iar.failed());
+    EXPECT_LT(s.capacity(), 1024u * 1024u);
+  }
+  {
+    const std::string big(200 * 1024 + 7, 'x');
+    std::ostringstream oss(std::ios::binary);
+    OutputArchive ar(oss);
+    std::string copy = big;
+    ar & copy;
+    std::istringstream iss(oss.str(), std::ios::binary);
+    InputArchive iar(iss);
+    std::string s;
+    iar & s;
+    EXPECT_FALSE(iar.failed());
+    EXPECT_EQ(s, big);
+  }
+}
+
 TEST(MetaTest, Json_WhitespaceRejectsFormFeedAndVerticalTab) {
   // JSON only allows space/\t/\n/\r between tokens; \f and \v are not valid
   // whitespace even though std::isspace accepts them.

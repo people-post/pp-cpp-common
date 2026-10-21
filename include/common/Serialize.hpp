@@ -610,14 +610,22 @@ public:
       return false;
     }
 
-    // MAX_STRING_SIZE above already bounds the allocation this resize() can
-    // cause (64MB worst case), so read the whole declared length directly.
-    value.resize(static_cast<size_t>(size));
-    if (size > 0) {
-      if (!is_.read(&value[0], static_cast<std::streamsize>(size))) {
+    // `size` is attacker-controlled: grow with the bytes actually read rather
+    // than allocating the declared length up front, so a short input that
+    // declares a large string fails without a large allocation.
+    value.clear();
+    value.reserve(static_cast<size_t>(boundedReserveCount<char>(size)));
+    constexpr uint64_t kChunk = 64 * 1024;
+    uint64_t done = 0;
+    while (done < size) {
+      const uint64_t n = std::min(kChunk, size - done);
+      value.resize(static_cast<size_t>(done + n));
+      if (!is_.read(&value[static_cast<size_t>(done)],
+                    static_cast<std::streamsize>(n))) {
         failed_ = true;
         return false;
       }
+      done += n;
     }
     return true;
   }
