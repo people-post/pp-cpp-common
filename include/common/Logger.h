@@ -77,10 +77,6 @@ private:
   Level level_;
 };
 
-/**
- * One log call is one record on one line. Multi-line messages are not supported: log one line per
- * call. A line break inside a message is flattened to a single space when the record is formatted.
- */
 class LogStream {
 public:
   LogStream(Logger *logger, Level level);
