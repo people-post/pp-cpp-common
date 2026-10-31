@@ -22,7 +22,8 @@ struct CaptureHandler : Handler {
 
 } // namespace
 
-TEST(LoggerLineBreaksTest, ABodyWithLineBreaksStaysOneRecord) {
+// A record is one line: a line break in a body is flattened to one space, never kept or encoded.
+TEST(LoggerLineBreaksTest, ABodyWithLineBreaksStaysOneLine) {
   auto handler = std::make_shared<CaptureHandler>();
   Logger log = pp::logging::getLogger("test.line_breaks");
   log.setLevel(Level::DEBUG);
@@ -33,8 +34,8 @@ TEST(LoggerLineBreaksTest, ABodyWithLineBreaksStaysOneRecord) {
   ASSERT_EQ(handler->count, 1);
   EXPECT_EQ(handler->last_message.find('\n'), std::string::npos);
   EXPECT_EQ(handler->last_message.find('\r'), std::string::npos);
-  EXPECT_NE(handler->last_message.find("first\\n[2026-10-28 09:00:00.000] [INFO] [Net] forged\\r\\nlast"),
-            std::string::npos);
+  EXPECT_NE(handler->last_message.find("first [2026-10-28 09:00:00.000] [INFO] [Net] forged last"), std::string::npos)
+      << handler->last_message;
 }
 
 TEST(LoggerLineBreaksTest, PlainBodiesAreUnchanged) {
