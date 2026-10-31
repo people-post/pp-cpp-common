@@ -190,7 +190,17 @@ std::string LoggerNode::formatMessage(Level level, const std::string &message, c
   if (!originatingLoggerName.empty()) {
     ss << "[" << originatingLoggerName << "] ";
   }
-  ss << message;
+  // One record per line: a message body carrying a line break (text echoed from the
+  // network, a multi-line error) must not be able to start a second, forged record.
+  for (const char c : message) {
+    if (c == '\n') {
+      ss << "\\n";
+    } else if (c == '\r') {
+      ss << "\\r";
+    } else {
+      ss << c;
+    }
+  }
   return ss.str();
 }
 
