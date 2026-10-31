@@ -76,6 +76,7 @@ if(PP_COMMON_BUILD_TESTS)
     tests/lifetime_test.cpp
     tests/serial_executor_test.cpp
     tests/logger_emit_floor_test.cpp
+    tests/logger_line_breaks_test.cpp
     tests/metrics_registry_test.cpp
     tests/utilities_test.cpp
     tests/value_meta_test.cpp
