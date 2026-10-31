@@ -11,6 +11,7 @@ Shared C++ foundation for People Post apps (`namespace pp`).
 - `SerialExecutor` (one thread: `PostAfter` timers, `RunAndWait` for lifecycle edges) — `ThreadExecutor`, and `ManualExecutor` for deterministic tests (a queue and a clock the test drives)
 - `ValueJson` (parse / dump / typed reads / deep merge over `Value`), `AtomicFileWrite` (temp + fsync + rename; owner-only on POSIX), `SettledWait` (one-shot cross-thread result), `CodedFailure` (a layer's coded error enum in `Roe`), `MetricsRegistry` (counters / gauges / histograms, Prometheus text)
 - `Lifetime` — keeps posted work from reaching an object that stopped or went away (`Bind` / `Invalidate`; `InvalidateAndWait` across threads)
+- **Process runtime** (`common/runtime/`): `AppRuntime` — worker pool, coordinator (mailbox + timer wheel), UI mailbox, a teardown gate (`QuiesceForTeardown`), and **owner threads** the app registers (`AppRuntimeConfig::owners`: id + thread name; Dedicated, or Manual for tests). On an owner: `OwnerExecutor` / `RuntimeOwnerExecutor` (where a runner runs), `OwnerTasks` (one object's posts and timers, dropped with it), `OwnerOutbox` (a child's typed report to its parent), `OwnerSteps` (continuations waiting for an event); `QueueOwnerExecutor` for tests. `PP_ASSERT_ON_OWNER` checks affinity in debug builds
 - `CivilTime`, `Utilities`
 - Binary wire helpers (`Serialize`, `BinaryPack`)
 - Human document tree: `Value` / `Object`, `FiFoMap`
