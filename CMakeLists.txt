@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(pp-cpp-common VERSION 1.2.1 LANGUAGES CXX)
+project(pp-cpp-common VERSION 1.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +21,13 @@ add_library(pp_common STATIC
   src/Value.cpp
   src/WorkerPool.cpp
   src/io/Json.cpp
+  src/runtime/AppRuntime.cpp
+  src/runtime/CoordinatorThread.cpp
+  src/runtime/OwnerTasks.cpp
+  src/runtime/OwnerThread.cpp
+  src/runtime/RuntimeOwnerExecutor.cpp
+  src/runtime/ThreadRuntime.cpp
+  src/runtime/WorkerDispatch.cpp
 )
 add_library(pp::common ALIAS pp_common)
 
@@ -72,7 +79,14 @@ if(PP_COMMON_BUILD_TESTS)
     tests/metrics_registry_test.cpp
     tests/utilities_test.cpp
     tests/value_meta_test.cpp
-    tests/worker_pool_test.cpp)
+    tests/worker_pool_test.cpp
+    tests/app_runtime_teardown_test.cpp
+    tests/app_runtime_worker_test.cpp
+    tests/coordinator_thread_test.cpp
+    tests/owner_tasks_test.cpp
+    tests/owner_thread_test.cpp
+    tests/runtime_owner_executor_test.cpp
+    tests/ui_mailbox_thread_test.cpp)
   target_link_libraries(pp_common_test PRIVATE
     pp_common
     GTest::gtest
