@@ -1,9 +1,13 @@
 #include "common/AtomicFileWrite.h"
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <string>
+#include <thread>
+#include <vector>
 
 #if !defined(_WIN32)
 #include <sys/stat.h>
@@ -38,6 +42,77 @@ TEST_F(AtomicFileWriteTest, ReplacesExistingFile) {
   std::ifstream in(path);
   std::string body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   EXPECT_EQ(body, "{\"ok\":true}");
+}
+
+std::string ReadAll(const std::string &path) {
+  std::ifstream in(path, std::ios::binary);
+  return std::string((std::istreambuf_iterator<char>(in)),
+                     std::istreambuf_iterator<char>());
+}
+
+// Two writers of one path at once each succeed, the file is one of theirs
+// whole, and no temp file is left.
+TEST_F(AtomicFileWriteTest, WritersOfOnePathAtOnceAllSucceed) {
+  const auto path = (dir_ / "shared.bin").string();
+  constexpr int kWriters = 4;
+  constexpr int kWrites = 50;
+  std::atomic<int> failed{0};
+  std::vector<std::thread> writers;
+  for (int w = 0; w < kWriters; ++w) {
+    writers.emplace_back([&, w] {
+      const std::string body(32 * 1024, static_cast<char>('a' + w));
+      for (int i = 0; i < kWrites; ++i) {
+        if (!AtomicFileWrite::Write(path, body, AtomicFileWrite::Sync::None)) {
+          failed.fetch_add(1);
+        }
+      }
+    });
+  }
+  for (std::thread &writer : writers) {
+    writer.join();
+  }
+  EXPECT_EQ(failed.load(), 0);
+  const std::string body = ReadAll(path);
+  ASSERT_EQ(body.size(), 32u * 1024u);
+  EXPECT_EQ(body.find_first_not_of(body[0]), std::string::npos)
+      << "one writer's content, whole";
+  int stray = 0;
+  for (const auto &entry : std::filesystem::directory_iterator(dir_)) {
+    stray += entry.path().filename().string() != "shared.bin" ? 1 : 0;
+  }
+  EXPECT_EQ(stray, 0);
+}
+
+// A file someone is reading is replaced: the write waits for the reader on
+// Windows (which cannot replace an open file) instead of failing; elsewhere it
+// replaces it at once.
+TEST_F(AtomicFileWriteTest, AFileBeingReadIsReplaced) {
+  const auto path = (dir_ / "read.txt").string();
+  ASSERT_TRUE(AtomicFileWrite::Write(path, std::string("old")));
+  std::atomic<bool> open{false};
+  std::thread reader([&] {
+    std::ifstream in(path, std::ios::binary);
+    open.store(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  });
+  while (!open.load()) {
+    std::this_thread::yield();
+  }
+  auto written = AtomicFileWrite::Write(path, std::string("new"));
+  reader.join();
+  ASSERT_TRUE(written) << written.error().message;
+  EXPECT_EQ(ReadAll(path), "new");
+}
+
+// A header and a payload as one file; and Sync::None still replaces the file
+// whole.
+TEST_F(AtomicFileWriteTest, APrefixAndItsPayloadAreOneFile) {
+  const auto path = (dir_ / "block").string();
+  const std::vector<uint8_t> payload = {1, 2, 3, 0, 255};
+  ASSERT_TRUE(AtomicFileWrite::Write(path, std::string_view("PPBA"), payload,
+                                     AtomicFileWrite::Sync::None));
+  EXPECT_EQ(ReadAll(path),
+            std::string("PPBA") + std::string("\x01\x02\x03\x00\xff", 5));
 }
 
 TEST_F(AtomicFileWriteTest, CreatesParentDirs) {
