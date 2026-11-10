@@ -16,7 +16,7 @@ thread_local int t_standing_in[kMaxOwnerThreads] = {};
 
 RuntimeOwnerExecutor::RuntimeOwnerExecutor(const OwnerThreadId owner) : owner_(owner) {
   if (static_cast<size_t>(owner) >= kMaxOwnerThreads) {
-    std::abort();  // an owner id the runtime cannot hold (OwnerThread.h, kMaxOwnerThreads)
+    std::abort(); // an owner id the runtime cannot hold (OwnerThread.h, kMaxOwnerThreads)
   }
 }
 
@@ -63,17 +63,15 @@ void RuntimeOwnerExecutor::PostFront(std::function<void()> task) {
   }
 }
 
-OwnerExecutor::TimerId RuntimeOwnerExecutor::After(const std::chrono::milliseconds delay,
-                                                   std::function<void()> task) {
+OwnerExecutor::TimerId RuntimeOwnerExecutor::After(const std::chrono::milliseconds delay, std::function<void()> task) {
   // The coordinator outlives every runner; the task re-enters through Post with this executor's hooks.
-  return AppRuntime::ScheduleCoordinatorOneShot(
-      delay, [owner = owner_, task = WithHooks(std::move(task))]() mutable {
-        if (AppRuntime::HasOwner(owner)) {
-          AppRuntime::PostTo(owner, std::move(task));
-        } else {
-          AppRuntime::PostUI(std::move(task));
-        }
-      });
+  return AppRuntime::ScheduleCoordinatorOneShot(delay, [owner = owner_, task = WithHooks(std::move(task))]() mutable {
+    if (AppRuntime::HasOwner(owner)) {
+      AppRuntime::PostTo(owner, std::move(task));
+    } else {
+      AppRuntime::PostUI(std::move(task));
+    }
+  });
 }
 
 void RuntimeOwnerExecutor::Cancel(const TimerId id) {
@@ -94,7 +92,7 @@ void RuntimeOwnerExecutor::RunAndWait(const std::function<void()>& task) {
     return;
   }
   if (IsCurrent()) {
-    task();  // the enclosing owner task runs the hooks
+    task(); // the enclosing owner task runs the hooks
     return;
   }
   if (AppRuntime::HasOwner(owner_)) {

@@ -15,7 +15,7 @@ OwnerTasks::~OwnerTasks() {
 
 void OwnerTasks::Close() {
   {
-    std::lock_guard<std::recursive_mutex> lock(handle_->mu_);  // waits out a handle call in flight
+    std::lock_guard<std::recursive_mutex> lock(handle_->mu_); // waits out a handle call in flight
     handle_->tasks_ = nullptr;
   }
   DropPending();
@@ -58,12 +58,12 @@ OwnerExecutor::TimerId OwnerTasks::After(const std::chrono::milliseconds delay, 
   }
   // The id is known only after scheduling: the fired task looks it up through a shared slot.
   auto slot = std::make_shared<OwnerExecutor::TimerId>(0);
-  std::lock_guard<std::mutex> lock(mu_);  // held until the id is recorded: the fired task waits for it
+  std::lock_guard<std::mutex> lock(mu_); // held until the id is recorded: the fired task waits for it
   const OwnerExecutor::TimerId id = executor_.After(delay, self_.Bind([this, slot, task = std::move(task)]() {
     {
       std::lock_guard<std::mutex> fired(mu_);
       if (timers_.erase(*slot) == 0) {
-        return;  // cancelled after the executor had already queued it
+        return; // cancelled after the executor had already queued it
       }
     }
     task();

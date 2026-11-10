@@ -31,14 +31,14 @@ Value makeArray(std::vector<Value> elements) {
   return Value(ArrayPtr(std::move(a)));
 }
 
-bool valueEqual(const Value &a, const Value &b) {
+bool valueEqual(const Value& a, const Value& b) {
   if (a.index() != b.index()) {
     return false;
   }
   return std::visit(
-      [&](const auto &va) -> bool {
+      [&](const auto& va) -> bool {
         using V = std::decay_t<decltype(va)>;
-        const auto *vb = std::get_if<V>(&b);
+        const auto* vb = std::get_if<V>(&b);
         if (!vb) {
           return false;
         }
@@ -73,7 +73,7 @@ bool valueEqual(const Value &a, const Value &b) {
       a);
 }
 
-bool Array::operator==(const Array &o) const {
+bool Array::operator==(const Array& o) const {
   if (elements.size() != o.elements.size()) {
     return false;
   }
@@ -85,9 +85,9 @@ bool Array::operator==(const Array &o) const {
   return true;
 }
 
-ValueWire valueToWire(const Value &v) {
+ValueWire valueToWire(const Value& v) {
   return std::visit(
-      [](const auto &x) -> ValueWire {
+      [](const auto& x) -> ValueWire {
         using V = std::decay_t<decltype(x)>;
         if constexpr (std::is_same_v<V, Null>) {
           return {ValueWire::TAG_NULL, std::string()};
@@ -121,7 +121,7 @@ ValueWire valueToWire(const Value &v) {
           OutputArchive ar(oss);
           uint64_t n = x->elements.size();
           ar & n;
-          for (const auto &el : x->elements) {
+          for (const auto& el : x->elements) {
             const ValueWire w = valueToWire(el);
             ar & w;
           }
@@ -132,121 +132,120 @@ ValueWire valueToWire(const Value &v) {
       v);
 }
 
-bool wireToValue(const ValueWire &w, std::optional<Value> &out) {
+bool wireToValue(const ValueWire& w, std::optional<Value>& out) {
   out = std::nullopt;
   if (g_wireDepth >= kMaxWireDepth) {
     return false;
   }
   WireDepthGuard depthGuard;
   switch (w.tag) {
-  case ValueWire::TAG_NULL:
-    out = Null{};
-    return true;
-  case ValueWire::TAG_I64: {
-    auto r = pp::binaryUnpack<int64_t>(w.payload);
-    if (!r.isOk()) {
-      return false;
-    }
-    out = r.value();
-    return true;
-  }
-  case ValueWire::TAG_U64: {
-    auto r = pp::binaryUnpack<uint64_t>(w.payload);
-    if (!r.isOk()) {
-      return false;
-    }
-    out = r.value();
-    return true;
-  }
-  case ValueWire::TAG_BOOL: {
-    auto r = pp::binaryUnpack<bool>(w.payload);
-    if (!r.isOk()) {
-      return false;
-    }
-    out = r.value();
-    return true;
-  }
-  case ValueWire::TAG_DOUBLE: {
-    auto r = pp::binaryUnpack<double>(w.payload);
-    if (!r.isOk()) {
-      return false;
-    }
-    out = r.value();
-    return true;
-  }
-  case ValueWire::TAG_STRING: {
-    auto r = pp::binaryUnpack<std::string>(w.payload);
-    if (!r.isOk()) {
-      return false;
-    }
-    out = std::move(r.value());
-    return true;
-  }
-  case ValueWire::TAG_OBJECT: {
-    auto nested = std::make_shared<Object>();
-    if (!w.payload.empty()) {
-      auto r = pp::binaryUnpack<Object>(w.payload);
+    case ValueWire::TAG_NULL:
+      out = Null{};
+      return true;
+    case ValueWire::TAG_I64: {
+      auto r = pp::binaryUnpack<int64_t>(w.payload);
       if (!r.isOk()) {
         return false;
       }
-      *nested = std::move(r.value());
+      out = r.value();
+      return true;
     }
-    out = std::move(nested);
-    return true;
-  }
-  case ValueWire::TAG_ARRAY: {
-    std::istringstream iss(w.payload, std::ios::binary);
-    InputArchive ar(iss);
-    uint64_t n = 0;
-    ar & n;
-    if (ar.failed()) {
-      return false;
+    case ValueWire::TAG_U64: {
+      auto r = pp::binaryUnpack<uint64_t>(w.payload);
+      if (!r.isOk()) {
+        return false;
+      }
+      out = r.value();
+      return true;
     }
-    auto arr = std::make_shared<Array>();
-    for (uint64_t i = 0; i < n; ++i) {
-      ValueWire elemWire;
-      ar & elemWire;
+    case ValueWire::TAG_BOOL: {
+      auto r = pp::binaryUnpack<bool>(w.payload);
+      if (!r.isOk()) {
+        return false;
+      }
+      out = r.value();
+      return true;
+    }
+    case ValueWire::TAG_DOUBLE: {
+      auto r = pp::binaryUnpack<double>(w.payload);
+      if (!r.isOk()) {
+        return false;
+      }
+      out = r.value();
+      return true;
+    }
+    case ValueWire::TAG_STRING: {
+      auto r = pp::binaryUnpack<std::string>(w.payload);
+      if (!r.isOk()) {
+        return false;
+      }
+      out = std::move(r.value());
+      return true;
+    }
+    case ValueWire::TAG_OBJECT: {
+      auto nested = std::make_shared<Object>();
+      if (!w.payload.empty()) {
+        auto r = pp::binaryUnpack<Object>(w.payload);
+        if (!r.isOk()) {
+          return false;
+        }
+        *nested = std::move(r.value());
+      }
+      out = std::move(nested);
+      return true;
+    }
+    case ValueWire::TAG_ARRAY: {
+      std::istringstream iss(w.payload, std::ios::binary);
+      InputArchive ar(iss);
+      uint64_t n = 0;
+      ar & n;
       if (ar.failed()) {
         return false;
       }
-      std::optional<Value> ev;
-      if (!wireToValue(elemWire, ev)) {
+      auto arr = std::make_shared<Array>();
+      for (uint64_t i = 0; i < n; ++i) {
+        ValueWire elemWire;
+        ar & elemWire;
+        if (ar.failed()) {
+          return false;
+        }
+        std::optional<Value> ev;
+        if (!wireToValue(elemWire, ev)) {
+          return false;
+        }
+        if (!ev) {
+          return false;
+        }
+        arr->elements.push_back(std::move(*ev));
+      }
+      if (!ar.exactEnd()) {
         return false;
       }
-      if (!ev) {
-        return false;
-      }
-      arr->elements.push_back(std::move(*ev));
+      out = ArrayPtr(std::move(arr));
+      return true;
     }
-    if (!ar.exactEnd()) {
-      return false;
-    }
-    out = ArrayPtr(std::move(arr));
-    return true;
-  }
-  default:
-    return true;
+    default:
+      return true;
   }
 }
 
-void Object::set(const std::string &key, const Object &v) {
+void Object::set(const std::string& key, const Object& v) {
   fields_.set(key, Value(std::make_shared<Object>(v)));
 }
 
-std::optional<std::reference_wrapper<const Object>>
-Object::getMetaIf(const std::string &key) const {
+std::optional<std::reference_wrapper<const Object>> Object::getMetaIf(const std::string& key) const {
   auto slot = fields_.tryGet(key);
   if (!slot) {
     return std::nullopt;
   }
-  const auto *p = std::get_if<ObjectPtr>(&slot->get());
+  const auto* p = std::get_if<ObjectPtr>(&slot->get());
   if (!p || !(*p)) {
     return std::nullopt;
   }
   return std::cref(**p);
 }
 
-bool Object::isNull(const std::string &key) const {
+bool Object::isNull(const std::string& key) const {
   auto slot = fields_.tryGet(key);
   if (!slot) {
     return false;
@@ -254,7 +253,7 @@ bool Object::isNull(const std::string &key) const {
   return std::holds_alternative<Null>(slot->get());
 }
 
-std::optional<uint64_t> Object::getNonNegInt(const std::string &key) const {
+std::optional<uint64_t> Object::getNonNegInt(const std::string& key) const {
   auto slot = fields_.tryGet(key);
   if (!slot) {
     return std::nullopt;
@@ -262,7 +261,7 @@ std::optional<uint64_t> Object::getNonNegInt(const std::string &key) const {
   return asNonNegInt(slot->get());
 }
 
-std::optional<std::string> Object::getString(const std::string &key) const {
+std::optional<std::string> Object::getString(const std::string& key) const {
   auto slot = fields_.tryGet(key);
   if (!slot) {
     return std::nullopt;
@@ -270,7 +269,7 @@ std::optional<std::string> Object::getString(const std::string &key) const {
   return asString(slot->get());
 }
 
-const Object *Object::getObject(const std::string &key) const {
+const Object* Object::getObject(const std::string& key) const {
   auto slot = fields_.tryGet(key);
   if (!slot) {
     return nullptr;
@@ -278,7 +277,7 @@ const Object *Object::getObject(const std::string &key) const {
   return asObject(slot->get());
 }
 
-const Array *Object::getArray(const std::string &key) const {
+const Array* Object::getArray(const std::string& key) const {
   auto slot = fields_.tryGet(key);
   if (!slot) {
     return nullptr;
@@ -286,7 +285,7 @@ const Array *Object::getArray(const std::string &key) const {
   return asArray(slot->get());
 }
 
-bool Object::setJsonUInt(const std::string &key, uint64_t v) {
+bool Object::setJsonUInt(const std::string& key, uint64_t v) {
   if (v > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
     return false;
   }
@@ -294,13 +293,13 @@ bool Object::setJsonUInt(const std::string &key, uint64_t v) {
   return true;
 }
 
-void Object::setUIntForJson(const std::string &key, uint64_t v) {
+void Object::setUIntForJson(const std::string& key, uint64_t v) {
   if (!setJsonUInt(key, v)) {
     fields_.set(key, Value(std::to_string(v)));
   }
 }
 
-bool Object::operator==(const Object &other) const {
+bool Object::operator==(const Object& other) const {
   if (fields_.size() != other.fields_.size()) {
     return false;
   }
@@ -317,44 +316,47 @@ bool Object::operator==(const Object &other) const {
   return true;
 }
 
-bool isNullValue(const Value &v) { return std::holds_alternative<Null>(v); }
+bool isNullValue(const Value& v) {
+  return std::holds_alternative<Null>(v);
+}
 
-bool isStringValue(const Value &v) {
+bool isStringValue(const Value& v) {
   return std::holds_alternative<std::string>(v);
 }
 
-bool isObjectValue(const Value &v) {
-  const auto *p = std::get_if<ObjectPtr>(&v);
+bool isObjectValue(const Value& v) {
+  const auto* p = std::get_if<ObjectPtr>(&v);
   return p && *p;
 }
 
-bool isArrayValue(const Value &v) {
-  const auto *p = std::get_if<ArrayPtr>(&v);
+bool isArrayValue(const Value& v) {
+  const auto* p = std::get_if<ArrayPtr>(&v);
   return p && *p;
 }
 
-bool isBoolValue(const Value &v) { return std::holds_alternative<bool>(v); }
+bool isBoolValue(const Value& v) {
+  return std::holds_alternative<bool>(v);
+}
 
-std::optional<uint64_t> asNonNegInt(const Value &v) {
-  if (const auto *i = std::get_if<int64_t>(&v)) {
+std::optional<uint64_t> asNonNegInt(const Value& v) {
+  if (const auto* i = std::get_if<int64_t>(&v)) {
     if (*i < 0) {
       return std::nullopt;
     }
     return static_cast<uint64_t>(*i);
   }
-  if (const auto *u = std::get_if<uint64_t>(&v)) {
+  if (const auto* u = std::get_if<uint64_t>(&v)) {
     return *u;
   }
-  if (const auto *s = std::get_if<std::string>(&v)) {
+  if (const auto* s = std::get_if<std::string>(&v)) {
     if (s->empty()) {
       return std::nullopt;
     }
     try {
       size_t idx = 0;
       int base = 10;
-      const char *p = s->c_str();
-      if (s->size() >= 2 && s->at(0) == '0' &&
-          (s->at(1) == 'x' || s->at(1) == 'X')) {
+      const char* p = s->c_str();
+      if (s->size() >= 2 && s->at(0) == '0' && (s->at(1) == 'x' || s->at(1) == 'X')) {
         p += 2;
         base = 16;
       }
@@ -377,39 +379,39 @@ std::optional<uint64_t> asNonNegInt(const Value &v) {
   return std::nullopt;
 }
 
-std::optional<std::string> asString(const Value &v) {
-  if (const auto *s = std::get_if<std::string>(&v)) {
+std::optional<std::string> asString(const Value& v) {
+  if (const auto* s = std::get_if<std::string>(&v)) {
     return *s;
   }
   return std::nullopt;
 }
 
-const Object *asObject(const Value &v) {
-  const auto *p = std::get_if<ObjectPtr>(&v);
+const Object* asObject(const Value& v) {
+  const auto* p = std::get_if<ObjectPtr>(&v);
   if (!p || !(*p)) {
     return nullptr;
   }
   return p->get();
 }
 
-Object *asObject(Value &v) {
-  auto *p = std::get_if<ObjectPtr>(&v);
+Object* asObject(Value& v) {
+  auto* p = std::get_if<ObjectPtr>(&v);
   if (!p || !(*p)) {
     return nullptr;
   }
   return p->get();
 }
 
-const Array *asArray(const Value &v) {
-  const auto *p = std::get_if<ArrayPtr>(&v);
+const Array* asArray(const Value& v) {
+  const auto* p = std::get_if<ArrayPtr>(&v);
   if (!p || !(*p)) {
     return nullptr;
   }
   return p->get();
 }
 
-Array *asArray(Value &v) {
-  auto *p = std::get_if<ArrayPtr>(&v);
+Array* asArray(Value& v) {
+  auto* p = std::get_if<ArrayPtr>(&v);
   if (!p || !(*p)) {
     return nullptr;
   }

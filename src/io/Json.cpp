@@ -29,7 +29,9 @@ namespace {
 // pathologically deep in-memory Value tree) cannot blow the call stack.
 constexpr int kMaxNestingDepth = 128;
 
-bool isAsciiDigit(char c) { return c >= '0' && c <= '9'; }
+bool isAsciiDigit(char c) {
+  return c >= '0' && c <= '9';
+}
 
 bool isJsonWs(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r';
@@ -79,7 +81,7 @@ constexpr char kReplacementCharUtf8[] = "\xEF\xBF\xBD";
 // historically lacks the floating-point overload. Route it through a fixed
 // "C" numeric locale (rather than the global C locale, which embedders may
 // change) so '.' is always the decimal point, and so the call is thread-safe.
-double strtodClassicLocale(const char *str, char **endPtr) {
+double strtodClassicLocale(const char* str, char** endPtr) {
 #if defined(_WIN32)
   static _locale_t classicLocale = _create_locale(LC_ALL, "C");
   if (classicLocale) {
@@ -108,7 +110,7 @@ pp::Error makeErr(std::string message, size_t offset, std::string path) {
   return pp::Error(std::move(full));
 }
 
-void appendUtf8(std::string &out, uint32_t cp) {
+void appendUtf8(std::string& out, uint32_t cp) {
   if (cp <= 0x7F) {
     out.push_back(static_cast<char>(cp));
   } else if (cp <= 0x7FF) {
@@ -126,7 +128,7 @@ void appendUtf8(std::string &out, uint32_t cp) {
   }
 }
 
-void appendEscapedJsonString(std::string &out, std::string_view s) {
+void appendEscapedJsonString(std::string& out, std::string_view s) {
   out.push_back('"');
   for (size_t i = 0; i < s.size();) {
     const unsigned char c = static_cast<unsigned char>(s[i]);
@@ -152,7 +154,7 @@ void appendEscapedJsonString(std::string &out, std::string_view s) {
       out += "\\t";
       ++i;
     } else if (c < 0x20) {
-      static const char *hex = "0123456789abcdef";
+      static const char* hex = "0123456789abcdef";
       out += "\\u00";
       out.push_back(hex[(c >> 4) & 0xf]);
       out.push_back(hex[c & 0xf]);
@@ -189,18 +191,16 @@ void appendEscapedJsonString(std::string &out, std::string_view s) {
   out.push_back('"');
 }
 
-void appendNlIndent(std::string &o, int indent, int depth) {
+void appendNlIndent(std::string& o, int indent, int depth) {
   o.push_back('\n');
   if (indent > 0 && depth > 0) {
     o.append(static_cast<size_t>(indent * depth), ' ');
   }
 }
 
-pp::Roe<void> appendJsonValue(std::string &o, const Value &value, int indent,
-                              int depth, const std::string &path);
+pp::Roe<void> appendJsonValue(std::string& o, const Value& value, int indent, int depth, const std::string& path);
 
-pp::Roe<void> appendJsonObject(std::string &o, const Object &m, int indent,
-                               int depth, const std::string &path) {
+pp::Roe<void> appendJsonObject(std::string& o, const Object& m, int indent, int depth, const std::string& path) {
   if (depth >= kMaxNestingDepth) {
     return makeErr("max nesting depth exceeded", 0, path);
   }
@@ -211,7 +211,7 @@ pp::Roe<void> appendJsonObject(std::string &o, const Object &m, int indent,
   }
   const bool pretty = indent >= 0;
   bool first = true;
-  for (const auto &[k, val] : m.fields()) {
+  for (const auto& [k, val] : m.fields()) {
     if (!first) {
       o.push_back(',');
     }
@@ -244,10 +244,9 @@ pp::Roe<void> appendJsonObject(std::string &o, const Object &m, int indent,
   return {};
 }
 
-pp::Roe<void> appendJsonValue(std::string &o, const Value &value, int indent,
-                              int depth, const std::string &path) {
+pp::Roe<void> appendJsonValue(std::string& o, const Value& value, int indent, int depth, const std::string& path) {
   return std::visit(
-      [&](const auto &v) -> pp::Roe<void> {
+      [&](const auto& v) -> pp::Roe<void> {
         using V = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<V, Null>) {
           o += "null";
@@ -304,8 +303,7 @@ pp::Roe<void> appendJsonValue(std::string &o, const Value &value, int indent,
             if (pretty) {
               appendNlIndent(o, indent, depth + 1);
             }
-            auto r = appendJsonValue(o, v->elements[i], indent, depth + 1,
-                                     path + "/" + std::to_string(i));
+            auto r = appendJsonValue(o, v->elements[i], indent, depth + 1, path + "/" + std::to_string(i));
             if (!r.isOk()) {
               return r;
             }
@@ -323,8 +321,7 @@ pp::Roe<void> appendJsonValue(std::string &o, const Value &value, int indent,
 
 class Parser {
 public:
-  explicit Parser(std::string_view s)
-      : start_(s.data()), p_(s.data()), end_(s.data() + s.size()) {}
+  explicit Parser(std::string_view s) : start_(s.data()), p_(s.data()), end_(s.data() + s.size()) {}
 
   size_t offset() const { return static_cast<size_t>(p_ - start_); }
 
@@ -336,7 +333,7 @@ public:
 
   bool atEnd() const { return p_ >= end_; }
 
-  pp::Roe<Value> parseValue(const std::string &path) {
+  pp::Roe<Value> parseValue(const std::string& path) {
     skipWs();
     char c = peek();
     if (c == '"') {
@@ -355,18 +352,15 @@ public:
       --depth_;
       return result;
     }
-    if (c == 'n' && static_cast<size_t>(end_ - p_) >= 4 &&
-        std::string_view(p_, 4) == "null") {
+    if (c == 'n' && static_cast<size_t>(end_ - p_) >= 4 && std::string_view(p_, 4) == "null") {
       p_ += 4;
       return Value(Null{});
     }
-    if (c == 't' && static_cast<size_t>(end_ - p_) >= 4 &&
-        std::string_view(p_, 4) == "true") {
+    if (c == 't' && static_cast<size_t>(end_ - p_) >= 4 && std::string_view(p_, 4) == "true") {
       p_ += 4;
       return Value(true);
     }
-    if (c == 'f' && static_cast<size_t>(end_ - p_) >= 5 &&
-        std::string_view(p_, 5) == "false") {
+    if (c == 'f' && static_cast<size_t>(end_ - p_) >= 5 && std::string_view(p_, 5) == "false") {
       p_ += 5;
       return Value(false);
     }
@@ -377,12 +371,12 @@ public:
   }
 
 private:
-  const char *start_;
-  const char *p_;
-  const char *end_;
+  const char* start_;
+  const char* p_;
+  const char* end_;
   int depth_ = 0;
 
-  pp::Roe<Value> parseObjectValue(const std::string &path) {
+  pp::Roe<Value> parseObjectValue(const std::string& path) {
     auto obj = parseObject(path);
     if (!obj.isOk()) {
       return obj.error();
@@ -401,7 +395,7 @@ private:
     return true;
   }
 
-  pp::Roe<void> expect(char c, const std::string &path) {
+  pp::Roe<void> expect(char c, const std::string& path) {
     skipWs();
     if (peek() != c) {
       return makeErr(std::string("expected '") + c + "'", offset(), path);
@@ -413,8 +407,7 @@ private:
   // Validates and copies one UTF-8 sequence starting with `first` (already
   // consumed from p_). Rejects overlong encodings, encoded surrogates, and
   // code points beyond U+10FFFF, matching the WHATWG/RFC 3629 UTF-8 table.
-  pp::Roe<void> appendValidatedUtf8(std::string &out, unsigned char first,
-                                    const std::string &path) {
+  pp::Roe<void> appendValidatedUtf8(std::string& out, unsigned char first, const std::string& path) {
     const Utf8LeadInfo info = ClassifyUtf8Lead(first);
     if (info.extraBytes < 0) {
       return makeErr("invalid utf-8 lead byte", offset(), path);
@@ -449,7 +442,7 @@ private:
     return -1;
   }
 
-  pp::Roe<uint32_t> parseHex4(const std::string &path) {
+  pp::Roe<uint32_t> parseHex4(const std::string& path) {
     if (end_ - p_ < 4) {
       return makeErr("truncated \\u escape", offset(), path);
     }
@@ -464,7 +457,7 @@ private:
     return cp;
   }
 
-  pp::Roe<std::string> parseString(const std::string &path) {
+  pp::Roe<std::string> parseString(const std::string& path) {
     std::string out;
     auto ex = expect('"', path);
     if (!ex.isOk()) {
@@ -495,62 +488,62 @@ private:
       }
       char e = *p_++;
       switch (e) {
-      case '"':
-      case '\\':
-      case '/':
-        out.push_back(e);
-        break;
-      case 'b':
-        out.push_back('\b');
-        break;
-      case 'f':
-        out.push_back('\f');
-        break;
-      case 'n':
-        out.push_back('\n');
-        break;
-      case 'r':
-        out.push_back('\r');
-        break;
-      case 't':
-        out.push_back('\t');
-        break;
-      case 'u': {
-        auto cu = parseHex4(path);
-        if (!cu.isOk()) {
-          return cu.error();
-        }
-        uint32_t cp = cu.value();
-        if (cp >= 0xD800 && cp <= 0xDBFF) {
-          if (p_ + 1 < end_ && p_[0] == '\\' && p_[1] == 'u') {
-            p_ += 2;
-            auto cl = parseHex4(path);
-            if (!cl.isOk()) {
-              return cl.error();
-            }
-            uint32_t low = cl.value();
-            if (low < 0xDC00 || low > 0xDFFF) {
-              return makeErr("invalid UTF-16 surrogate pair", offset(), path);
-            }
-            cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
-          } else {
-            return makeErr("missing low surrogate in \\u escape", offset(), path);
+        case '"':
+        case '\\':
+        case '/':
+          out.push_back(e);
+          break;
+        case 'b':
+          out.push_back('\b');
+          break;
+        case 'f':
+          out.push_back('\f');
+          break;
+        case 'n':
+          out.push_back('\n');
+          break;
+        case 'r':
+          out.push_back('\r');
+          break;
+        case 't':
+          out.push_back('\t');
+          break;
+        case 'u': {
+          auto cu = parseHex4(path);
+          if (!cu.isOk()) {
+            return cu.error();
           }
-        } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
-          return makeErr("unexpected low surrogate", offset(), path);
+          uint32_t cp = cu.value();
+          if (cp >= 0xD800 && cp <= 0xDBFF) {
+            if (p_ + 1 < end_ && p_[0] == '\\' && p_[1] == 'u') {
+              p_ += 2;
+              auto cl = parseHex4(path);
+              if (!cl.isOk()) {
+                return cl.error();
+              }
+              uint32_t low = cl.value();
+              if (low < 0xDC00 || low > 0xDFFF) {
+                return makeErr("invalid UTF-16 surrogate pair", offset(), path);
+              }
+              cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+            } else {
+              return makeErr("missing low surrogate in \\u escape", offset(), path);
+            }
+          } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+            return makeErr("unexpected low surrogate", offset(), path);
+          }
+          appendUtf8(out, cp);
+          break;
         }
-        appendUtf8(out, cp);
-        break;
-      }
-      default:
-        return makeErr("invalid escape", offset(), path);
+        default:
+          return makeErr("invalid escape", offset(), path);
       }
     }
     return makeErr("unterminated string", offset(), path);
   }
 
-  pp::Roe<Value> parseNumber(const std::string &path) {
-    const char *start = p_;
+  pp::Roe<Value> parseNumber(const std::string& path) {
+    const char* start = p_;
     if (peek() == '-') {
       ++p_;
     }
@@ -591,11 +584,10 @@ private:
     if (isFloat) {
       // Apple libc++ (and some other libcs) still lack std::from_chars for floating
       // point; strtod is portable. Token is already JSON-validated.
-      char *endPtr = nullptr;
+      char* endPtr = nullptr;
       errno = 0;
       const double d = strtodClassicLocale(num.c_str(), &endPtr);
-      if (errno == ERANGE || endPtr != num.c_str() + num.size() ||
-          !std::isfinite(d)) {
+      if (errno == ERANGE || endPtr != num.c_str() + num.size() || !std::isfinite(d)) {
         return makeErr("invalid floating-point number", offset(), path);
       }
       return Value(d);
@@ -611,7 +603,7 @@ private:
     return Value(v);
   }
 
-  pp::Roe<Object> parseObject(const std::string &path) {
+  pp::Roe<Object> parseObject(const std::string& path) {
     Object out;
     auto ex = expect('{', path);
     if (!ex.isOk()) {
@@ -652,7 +644,7 @@ private:
     }
   }
 
-  pp::Roe<Value> parseArray(const std::string &path) {
+  pp::Roe<Value> parseArray(const std::string& path) {
     auto ex = expect('[', path);
     if (!ex.isOk()) {
       return ex.error();
@@ -683,7 +675,7 @@ private:
 
 } // namespace
 
-pp::Roe<std::string> valueToJsonString(const Value &v, int indent) {
+pp::Roe<std::string> valueToJsonString(const Value& v, int indent) {
   std::string o;
   auto r = appendJsonValue(o, v, indent, 0, "");
   if (!r.isOk()) {
@@ -692,7 +684,7 @@ pp::Roe<std::string> valueToJsonString(const Value &v, int indent) {
   return o;
 }
 
-pp::Roe<Value> valueFromJsonString(const std::string &json) {
+pp::Roe<Value> valueFromJsonString(const std::string& json) {
   Parser p(json);
   auto v = p.parseValue("");
   if (!v.isOk()) {
@@ -700,13 +692,12 @@ pp::Roe<Value> valueFromJsonString(const std::string &json) {
   }
   p.skipWs();
   if (!p.atEnd()) {
-    return pp::Error("trailing data after JSON value (offset " +
-                     std::to_string(p.offset()) + ")");
+    return pp::Error("trailing data after JSON value (offset " + std::to_string(p.offset()) + ")");
   }
   return v;
 }
 
-std::string objectToJsonString(const Object &o, int indent) {
+std::string objectToJsonString(const Object& o, int indent) {
   auto r = valueToJsonString(Value(std::make_shared<Object>(o)), indent);
   if (!r.isOk()) {
     std::string out = "{\"error\":";
@@ -717,12 +708,12 @@ std::string objectToJsonString(const Object &o, int indent) {
   return std::move(r.value());
 }
 
-bool objectFromJsonString(Object &out, const std::string &json) {
+bool objectFromJsonString(Object& out, const std::string& json) {
   auto r = valueFromJsonString(json);
   if (!r.isOk()) {
     return false;
   }
-  auto *obj = std::get_if<ObjectPtr>(&r.value());
+  auto* obj = std::get_if<ObjectPtr>(&r.value());
   if (!obj || !(*obj)) {
     return false;
   }

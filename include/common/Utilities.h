@@ -15,4 +15,3 @@ std::string Trim(const std::string& text);
 std::string ToLowerAscii(std::string text);
 
 } // namespace pp::util
-

@@ -256,8 +256,7 @@ std::function<void()> GateTask(std::function<void()> task, const GateKind kind) 
   {
     std::lock_guard lock(g_gate.mu);
     if (kind == GateKind::Posted) {
-      if (g_gate.state == TeardownState::Closed ||
-          (g_gate.state == TeardownState::Draining && t_gated_depth == 0)) {
+      if (g_gate.state == TeardownState::Closed || (g_gate.state == TeardownState::Draining && t_gated_depth == 0)) {
         return {};
       }
       ++g_gate.pending;
@@ -270,17 +269,17 @@ std::function<void()> GateTask(std::function<void()> task, const GateKind kind) 
       std::lock_guard lock(g_gate.mu);
       bool run = false;
       switch (kind) {
-      case GateKind::Posted:
-        pending->Settle();
-        run = g_gate.state != TeardownState::Closed && g_gate.epoch == epoch;
-        break;
-      case GateKind::OneShotTimer:
-        run = g_gate.state == TeardownState::Open && g_gate.epoch == epoch;
-        break;
-      case GateKind::RepeatingTimer:
-        // Owners cancel their repeating timers; GUI timers must survive a profile reset.
-        run = g_gate.state == TeardownState::Open;
-        break;
+        case GateKind::Posted:
+          pending->Settle();
+          run = g_gate.state != TeardownState::Closed && g_gate.epoch == epoch;
+          break;
+        case GateKind::OneShotTimer:
+          run = g_gate.state == TeardownState::Open && g_gate.epoch == epoch;
+          break;
+        case GateKind::RepeatingTimer:
+          // Owners cancel their repeating timers; GUI timers must survive a profile reset.
+          run = g_gate.state == TeardownState::Open;
+          break;
       }
       if (!run) {
         g_gate.cv.notify_all();
@@ -302,8 +301,7 @@ std::function<void()> GateTask(std::function<void()> task, const GateKind kind) 
 }
 
 /** Boundary helper: takes Logger& (do not copy Logger — LogProxy binds to `this`). */
-void RunShutdownWatchdog(logging::Logger& log, uint64_t gen,
-                         std::chrono::steady_clock::time_point deadline) {
+void RunShutdownWatchdog(logging::Logger& log, uint64_t gen, std::chrono::steady_clock::time_point deadline) {
   for (;;) {
     const auto now = std::chrono::steady_clock::now();
     if (now >= deadline) {
@@ -317,7 +315,6 @@ void RunShutdownWatchdog(logging::Logger& log, uint64_t gen,
 }
 
 } // namespace
-
 
 void AppRuntime::InitLogging() {
   std::lock_guard lock(g_log_mu);
@@ -461,7 +458,7 @@ bool AppRuntime::QuiesceForTeardown(const std::chrono::milliseconds budget) {
     if (pump_ui) {
       RunUITasks();
     }
-    RunAllOwnerTasks();  // Manual owners have no thread of their own (no-op when Dedicated)
+    RunAllOwnerTasks(); // Manual owners have no thread of their own (no-op when Dedicated)
     std::unique_lock lock(g_gate.mu);
     pending = g_gate.pending;
     running = g_gate.running;
@@ -708,7 +705,7 @@ void AppRuntime::PostTo(const OwnerThreadId owner, std::function<void()> task) {
   if (!gated) {
     return;
   }
-  (void)target->Post(std::move(gated));  // a stopped owner destroys it unrun (gate settles)
+  (void)target->Post(std::move(gated)); // a stopped owner destroys it unrun (gate settles)
 }
 
 void AppRuntime::PostToFront(const OwnerThreadId owner, std::function<void()> task) {
@@ -756,7 +753,7 @@ void AppRuntime::RunAndWait(const OwnerThreadId owner, const std::function<void(
     task();
     state->Settle(true);
   });
-  drop.reset();  // only the posted task (if queued) keeps it: dropping the task settles the wait
+  drop.reset(); // only the posted task (if queued) keeps it: dropping the task settles the wait
   if (target->Mode() == OwnerThreadMode::Manual) {
     // No thread: drain the owner on the caller up to (and past) our task.
     while (!state->IsSettled() && RunOwnerTasks(owner) > 0) {
@@ -768,7 +765,7 @@ void AppRuntime::RunAndWait(const OwnerThreadId owner, const std::function<void(
     }
   }
   if (!state->Ran()) {
-    RunStandingIn(owner, task);  // dropped (teardown gate / owner stopping): nobody else runs its state
+    RunStandingIn(owner, task); // dropped (teardown gate / owner stopping): nobody else runs its state
   }
 }
 
@@ -828,24 +825,20 @@ void AppRuntime::AssertOn(const OwnerThreadId owner, const char* where) {
   if (!target || CurrentlyOn(owner)) {
     return;
   }
-  logger().error << "owner-thread affinity violated: " << (where ? where : "?") << " must run on "
-                 << target->Name();
+  logger().error << "owner-thread affinity violated: " << (where ? where : "?") << " must run on " << target->Name();
   std::abort();
 }
 
-uint64_t AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds interval,
-                                                  std::function<void()> fn) {
+uint64_t AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds interval, std::function<void()> fn) {
   // Mid-shutdown: ThreadRuntime clears running_ before joining workers; in-flight unlock
   // may still call StartCoordinatorTimers — no-op instead of Coordinator() assert.
   if (!IsRunning() || !fn) {
     return 0;
   }
-  return g_thread_runtime->Coordinator().ScheduleRepeating(
-      interval, GateTask(std::move(fn), GateKind::RepeatingTimer));
+  return g_thread_runtime->Coordinator().ScheduleRepeating(interval, GateTask(std::move(fn), GateKind::RepeatingTimer));
 }
 
-uint64_t AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds delay,
-                                                std::function<void()> fn) {
+uint64_t AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds delay, std::function<void()> fn) {
   if (!IsRunning() || !fn) {
     return 0;
   }
@@ -869,16 +862,17 @@ public:
     if (!task) {
       return 0;
     }
-    return AppRuntime::ScheduleCoordinatorOneShot(delay, [lane = std::weak_ptr<OwnerThread>(lane_), task = std::move(task)]() {
-      if (auto alive = lane.lock()) {
-        (void)alive->Post(task);
-      }
-    });
+    return AppRuntime::ScheduleCoordinatorOneShot(delay,
+                                                  [lane = std::weak_ptr<OwnerThread>(lane_), task = std::move(task)]() {
+                                                    if (auto alive = lane.lock()) {
+                                                      (void)alive->Post(task);
+                                                    }
+                                                  });
   }
   void CancelTimer(const TimerId id) override { AppRuntime::CancelCoordinatorTimer(id); }
   void RunAndWait(const Task& task) override {
     if (!task || lane_->Mode() != OwnerThreadMode::Manual || RunsTasksOnCurrentThread()) {
-      SerialExecutor::RunAndWait(task);  // Dedicated: post and wait; here already: inline
+      SerialExecutor::RunAndWait(task); // Dedicated: post and wait; here already: inline
       return;
     }
     // No thread: drain the lane on the caller up to (and past) the task.
@@ -890,7 +884,7 @@ public:
     while (!*ran && lane_->RunPending() > 0) {
     }
     if (!*ran) {
-      task();  // dropped (teardown gate): nobody else runs it
+      task(); // dropped (teardown gate): nobody else runs it
     }
   }
 

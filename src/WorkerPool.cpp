@@ -12,17 +12,16 @@ namespace pp {
 
 namespace {
 
-std::deque<std::function<void()>>* QueueForLane(WorkerLane lane,
-                                                std::deque<std::function<void()>>* critical,
+std::deque<std::function<void()>>* QueueForLane(WorkerLane lane, std::deque<std::function<void()>>* critical,
                                                 std::deque<std::function<void()>>* normal,
                                                 std::deque<std::function<void()>>* background) {
   switch (lane) {
-  case WorkerLane::Critical:
-    return critical;
-  case WorkerLane::Normal:
-    return normal;
-  case WorkerLane::Background:
-    return background;
+    case WorkerLane::Critical:
+      return critical;
+    case WorkerLane::Normal:
+      return normal;
+    case WorkerLane::Background:
+      return background;
   }
   return normal;
 }
@@ -37,8 +36,7 @@ size_t WorkerPool::ClampThreadCount(const size_t thread_count) {
 }
 
 WorkerPool::WorkerPool(const size_t thread_count)
-    : thread_count_(ClampThreadCount(thread_count)),
-      state_(std::make_shared<SharedState>(log())) {
+    : thread_count_(ClampThreadCount(thread_count)), state_(std::make_shared<SharedState>(log())) {
   redirectLogger("WorkerPool");
   state_->logger = log(); // refresh the copy now that redirectLogger has run
   state_->live_workers.store(thread_count_, std::memory_order_relaxed);
@@ -96,9 +94,8 @@ bool WorkerPool::Shutdown(std::chrono::milliseconds join_budget) {
   const auto deadline = std::chrono::steady_clock::now() + join_budget;
   {
     std::unique_lock lock(state_->mutex);
-    state_->cv.wait_until(lock, deadline, [this]() {
-      return state_->live_workers.load(std::memory_order_acquire) == 0;
-    });
+    state_->cv.wait_until(lock, deadline,
+                          [this]() { return state_->live_workers.load(std::memory_order_acquire) == 0; });
   }
 
   const bool all_exited = state_->live_workers.load(std::memory_order_acquire) == 0;
@@ -126,20 +123,19 @@ bool WorkerPool::Shutdown(std::chrono::milliseconds join_budget) {
 size_t WorkerPool::QueuedCount(const WorkerLane lane) const {
   std::lock_guard lock(state_->mutex);
   switch (lane) {
-  case WorkerLane::Critical:
-    return state_->critical_queue.size();
-  case WorkerLane::Normal:
-    return state_->normal_queue.size();
-  case WorkerLane::Background:
-    return state_->background_queue.size();
+    case WorkerLane::Critical:
+      return state_->critical_queue.size();
+    case WorkerLane::Normal:
+      return state_->normal_queue.size();
+    case WorkerLane::Background:
+      return state_->background_queue.size();
   }
   return 0;
 }
 
 size_t WorkerPool::TotalQueuedCount() const {
   std::lock_guard lock(state_->mutex);
-  return state_->critical_queue.size() + state_->normal_queue.size() +
-         state_->background_queue.size();
+  return state_->critical_queue.size() + state_->normal_queue.size() + state_->background_queue.size();
 }
 
 void WorkerPool::WorkerMain(std::shared_ptr<SharedState> state, const size_t worker_index) {
@@ -155,9 +151,7 @@ void WorkerPool::WorkerMain(std::shared_ptr<SharedState> state, const size_t wor
     std::function<void()> task;
     {
       std::unique_lock lock(state->mutex);
-      state->cv.wait(lock, [&state]() {
-        return state->stopped || (!state->paused && HasWorkLocked(*state));
-      });
+      state->cv.wait(lock, [&state]() { return state->stopped || (!state->paused && HasWorkLocked(*state)); });
       // Once Shutdown sets stopped, never dequeue — queued work was dropped under the same lock.
       if (state->stopped) {
         state->live_workers.fetch_sub(1, std::memory_order_acq_rel);
@@ -190,8 +184,7 @@ bool WorkerPool::DequeueOneLocked(SharedState& state, std::function<void()>* out
 }
 
 bool WorkerPool::HasWorkLocked(const SharedState& state) {
-  return !state.critical_queue.empty() || !state.normal_queue.empty() ||
-         !state.background_queue.empty();
+  return !state.critical_queue.empty() || !state.normal_queue.empty() || !state.background_queue.empty();
 }
 
 void WorkerPool::EnqueueLocked(SharedState& state, WorkerLane lane, std::function<void()> task) {

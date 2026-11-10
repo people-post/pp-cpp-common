@@ -33,7 +33,7 @@ TEST(OwnerTasksTest, OutboxCopiesAreQuietAfterTheTasksAreGone) {
     outbox.Emit(1);
     Drain(queue);
     EXPECT_EQ(handled, 1);
-    outbox.Emit(10);  // queued, then the runner goes
+    outbox.Emit(10); // queued, then the runner goes
   }
   Drain(queue);
   EXPECT_EQ(handled, 1) << "an event queued before teardown ran after it";

@@ -23,7 +23,7 @@ public:
     queue_.push_back(std::move(task));
     return ++next_;
   }
-  void Cancel(TimerId /*id*/) override {}  // a cancelled timer's task is dropped by OwnerTasks
+  void Cancel(TimerId /*id*/) override {} // a cancelled timer's task is dropped by OwnerTasks
   bool IsCurrent() const override { return true; }
   void RunAndWait(const std::function<void()>& task) override { task(); }
 

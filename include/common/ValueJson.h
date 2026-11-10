@@ -57,8 +57,7 @@ inline Value ArrayValue(std::vector<Value> elements) {
   return makeArray(std::move(elements));
 }
 
-inline std::optional<std::string> ObjectString(const Object& object,
-                                               std::string_view key) {
+inline std::optional<std::string> ObjectString(const Object& object, std::string_view key) {
   return object.getString(std::string(key));
 }
 
@@ -70,8 +69,7 @@ inline std::optional<int64_t> ObjectInt64(const Object& object, std::string_view
   return object.getIf<int64_t>(std::string(key));
 }
 
-inline std::optional<uint64_t> ObjectNonNegInt(const Object& object,
-                                               std::string_view key) {
+inline std::optional<uint64_t> ObjectNonNegInt(const Object& object, std::string_view key) {
   return object.getNonNegInt(std::string(key));
 }
 

@@ -50,9 +50,7 @@ bool CoordinatorThread::Shutdown(std::chrono::milliseconds join_budget) {
   const auto deadline = std::chrono::steady_clock::now() + join_budget;
   {
     std::unique_lock lock(mutex_);
-    cv_.wait_until(lock, deadline, [this]() {
-      return thread_exited_.load(std::memory_order_acquire);
-    });
+    cv_.wait_until(lock, deadline, [this]() { return thread_exited_.load(std::memory_order_acquire); });
   }
 
   const bool exited = thread_exited_.load(std::memory_order_acquire);
@@ -64,8 +62,8 @@ bool CoordinatorThread::Shutdown(std::chrono::milliseconds join_budget) {
     return true;
   }
 
-  log().warning << "CoordinatorThread::Shutdown: thread still live after "
-                     << join_budget.count() << "ms — detaching (process exit must follow)";
+  log().warning << "CoordinatorThread::Shutdown: thread still live after " << join_budget.count()
+                << "ms — detaching (process exit must follow)";
   thread_.detach();
   // Leave started_/stopped_ as-is so a second Shutdown is a no-op; do not clear timers while
   // a detached ThreadMain may still touch them — owner must leak this object until process exit.
@@ -86,8 +84,7 @@ void CoordinatorThread::Post(CoordinatorPriority priority, std::function<void()>
   cv_.notify_one();
 }
 
-uint64_t CoordinatorThread::ScheduleRepeating(std::chrono::milliseconds interval,
-                                              std::function<void()> fn) {
+uint64_t CoordinatorThread::ScheduleRepeating(std::chrono::milliseconds interval, std::function<void()> fn) {
   if (!fn || interval.count() <= 0) {
     return 0;
   }
@@ -186,8 +183,7 @@ void CoordinatorThread::ThreadMain() {
       // CallMediaBridge's B39 stale-link retry with no preceding Post). Re-check the timer
       // deadline too so a fresh timer wakes this wait; NextTimerDeadlineLocked() is cheap.
       cv_.wait(lock, [this]() {
-        return stopped_ || HasWorkLocked() ||
-               NextTimerDeadlineLocked() != std::chrono::steady_clock::time_point::max();
+        return stopped_ || HasWorkLocked() || NextTimerDeadlineLocked() != std::chrono::steady_clock::time_point::max();
       });
       continue;
     }
@@ -198,9 +194,8 @@ void CoordinatorThread::ThreadMain() {
 
     // Also wake when a timer armed during the wait is due before `deadline` — otherwise it fires
     // only at the later deadline (1.5 s connect retry fired at a cancelled 16 s watchdog's).
-    cv_.wait_until(lock, deadline, [this, deadline]() {
-      return stopped_ || HasWorkLocked() || NextTimerDeadlineLocked() < deadline;
-    });
+    cv_.wait_until(lock, deadline,
+                   [this, deadline]() { return stopped_ || HasWorkLocked() || NextTimerDeadlineLocked() < deadline; });
   }
   thread_exited_.store(true, std::memory_order_release);
   cv_.notify_all();
@@ -266,8 +261,7 @@ void CoordinatorThread::FireDueTimersLocked(std::chrono::steady_clock::time_poin
     }
   }
 
-  timers_.erase(std::remove_if(timers_.begin(), timers_.end(),
-                               [](const TimerEntry& timer) { return timer.cancelled; }),
+  timers_.erase(std::remove_if(timers_.begin(), timers_.end(), [](const TimerEntry& timer) { return timer.cancelled; }),
                 timers_.end());
 }
 
@@ -285,15 +279,15 @@ void CoordinatorThread::RunTaskSafely(std::function<void()>& task) {
 
 void CoordinatorThread::EnqueueLocked(CoordinatorPriority priority, std::function<void()> task) {
   switch (priority) {
-  case CoordinatorPriority::Critical:
-    critical_queue_.push_back(std::move(task));
-    break;
-  case CoordinatorPriority::Normal:
-    normal_queue_.push_back(std::move(task));
-    break;
-  case CoordinatorPriority::Background:
-    background_queue_.push_back(std::move(task));
-    break;
+    case CoordinatorPriority::Critical:
+      critical_queue_.push_back(std::move(task));
+      break;
+    case CoordinatorPriority::Normal:
+      normal_queue_.push_back(std::move(task));
+      break;
+    case CoordinatorPriority::Background:
+      background_queue_.push_back(std::move(task));
+      break;
   }
 }
 

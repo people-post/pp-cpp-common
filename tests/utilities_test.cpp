@@ -9,8 +9,7 @@ using pp::util::GenerateUuid;
 
 TEST(UtilitiesTest, GenerateUuidMatchesRfc4122Version4) {
   // 8-4-4-4-12 hex, version nibble 4, variant nibble 8/9/a/b.
-  static const std::regex kUuidV4(
-      "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
+  static const std::regex kUuidV4("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
   for (int i = 0; i < 100; ++i) {
     const std::string uuid = GenerateUuid();
     EXPECT_TRUE(std::regex_match(uuid, kUuidV4)) << uuid;

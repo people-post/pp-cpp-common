@@ -13,8 +13,7 @@ using pp::logging::Level;
 using pp::logging::Logger;
 
 struct CaptureHandler : Handler {
-  void emit(Level level, const std::string& /*loggerName*/,
-            const std::string& message) override {
+  void emit(Level level, const std::string& /*loggerName*/, const std::string& message) override {
     last_level = level;
     last_message = message;
     ++count;

@@ -23,9 +23,7 @@ std::string trimLeadingDot(const std::string& name) {
 std::string getCurrentTimestamp() {
   auto now = std::chrono::system_clock::now();
   auto time = std::chrono::system_clock::to_time_t(now);
-  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now.time_since_epoch()) %
-            1000;
+  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
   std::tm local{};
   if (!civil_time::LocalTime(time, &local)) {
@@ -49,8 +47,7 @@ static Level ApplyEmitFloor(Level level) {
   return level < floor ? floor : level;
 }
 
-void ConsoleHandler::emit(Level level, const std::string &loggerName,
-                          const std::string &message) {
+void ConsoleHandler::emit(Level level, const std::string& loggerName, const std::string& message) {
   if (level < level_) {
     return;
   }
@@ -60,7 +57,7 @@ void ConsoleHandler::emit(Level level, const std::string &loggerName,
   std::cerr << message << std::endl;
 }
 
-FileHandler::FileHandler(const std::string &filename) : filename_(filename) {
+FileHandler::FileHandler(const std::string& filename) : filename_(filename) {
   file_.open(filename_, std::ios::app);
   if (!file_.is_open()) {
     throw std::runtime_error("Failed to open log file: " + filename_);
@@ -73,8 +70,7 @@ FileHandler::~FileHandler() {
   }
 }
 
-void FileHandler::emit(Level level, const std::string & /*loggerName*/,
-                       const std::string &message) {
+void FileHandler::emit(Level level, const std::string& /*loggerName*/, const std::string& message) {
   if (level < level_) {
     return;
   }
@@ -84,11 +80,9 @@ void FileHandler::emit(Level level, const std::string & /*loggerName*/,
   }
 }
 
-LogProxy::LogProxy(Logger *logger, Level level)
-    : logger_(logger), level_(level) {}
+LogProxy::LogProxy(Logger* logger, Level level) : logger_(logger), level_(level) {}
 
-LogStream::LogStream(Logger *logger, Level level)
-    : logger_(logger), level_(level), moved_(false) {}
+LogStream::LogStream(Logger* logger, Level level) : logger_(logger), level_(level), moved_(false) {}
 
 LogStream::~LogStream() {
   if (!moved_ && logger_) {
@@ -96,13 +90,12 @@ LogStream::~LogStream() {
   }
 }
 
-LogStream::LogStream(LogStream &&other) noexcept
-    : logger_(other.logger_), level_(other.level_),
-      stream_(std::move(other.stream_)), moved_(false) {
+LogStream::LogStream(LogStream&& other) noexcept
+    : logger_(other.logger_), level_(other.level_), stream_(std::move(other.stream_)), moved_(false) {
   other.moved_ = true;
 }
 
-LogStream &LogStream::operator=(LogStream &&other) noexcept {
+LogStream& LogStream::operator=(LogStream&& other) noexcept {
   if (this != &other) {
     logger_ = other.logger_;
     level_ = other.level_;
@@ -113,9 +106,7 @@ LogStream &LogStream::operator=(LogStream &&other) noexcept {
   return *this;
 }
 
-LoggerNode::LoggerNode(const std::string &name)
-    : name_(name) {
-}
+LoggerNode::LoggerNode(const std::string& name) : name_(name) {}
 
 std::string LoggerNode::getFullName() const {
   std::vector<std::string> parts;
@@ -149,17 +140,18 @@ void LoggerNode::addHandler(std::shared_ptr<Handler> spHandler) {
   spHandlers_.push_back(std::move(spHandler));
 }
 
-void LoggerNode::addFileHandler(const std::string &filename, Level level) {
+void LoggerNode::addFileHandler(const std::string& filename, Level level) {
   auto spHandler = std::make_shared<FileHandler>(filename);
   spHandler->setLevel(level);
   addHandler(spHandler);
 }
 
-void LoggerNode::log(Level level, const std::string &message) {
+void LoggerNode::log(Level level, const std::string& message) {
   logWithOriginatingName(level, message, getFullName());
 }
 
-void LoggerNode::logWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName) {
+void LoggerNode::logWithOriginatingName(Level level, const std::string& message,
+                                        const std::string& originatingLoggerName) {
   // Filter on the original call-site level so emit_floor cannot sneak DEBUG past
   // an INFO/WARNING threshold. Boost only for format + handler priority.
   if (level >= level_) {
@@ -174,16 +166,18 @@ void LoggerNode::logWithOriginatingName(Level level, const std::string &message,
   }
 }
 
-void LoggerNode::logToHandlersWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName) {
+void LoggerNode::logToHandlersWithOriginatingName(Level level, const std::string& message,
+                                                  const std::string& originatingLoggerName) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::string formattedMessage = formatMessage(level, message, originatingLoggerName);
 
-  for (auto &spHandler : spHandlers_) {
+  for (auto& spHandler : spHandlers_) {
     spHandler->emit(level, originatingLoggerName, formattedMessage);
   }
 }
 
-std::string LoggerNode::formatMessage(Level level, const std::string &message, const std::string &originatingLoggerName) {
+std::string LoggerNode::formatMessage(Level level, const std::string& message,
+                                      const std::string& originatingLoggerName) {
   std::stringstream ss;
   ss << "[" << getCurrentTimestamp() << "] ";
   ss << "[" << levelToString(level) << "] ";
@@ -206,18 +200,18 @@ std::string LoggerNode::formatMessage(Level level, const std::string &message, c
 
 std::string LoggerNode::levelToString(Level level) {
   switch (level) {
-  case kLevelDebug:
-    return "DEBUG";
-  case Level::INFO:
-    return "INFO";
-  case Level::WARNING:
-    return "WARNING";
-  case kLevelError:
-    return "ERROR";
-  case Level::CRITICAL:
-    return "CRITICAL";
-  default:
-    return "UNKNOWN";
+    case kLevelDebug:
+      return "DEBUG";
+    case Level::INFO:
+      return "INFO";
+    case Level::WARNING:
+      return "WARNING";
+    case kLevelError:
+      return "ERROR";
+    case Level::CRITICAL:
+      return "CRITICAL";
+    default:
+      return "UNKNOWN";
   }
 }
 
@@ -228,13 +222,9 @@ void LoggerNode::addChild(std::shared_ptr<LoggerNode> child) {
 
 void LoggerNode::removeChild(LoggerNode* child) {
   std::lock_guard<std::mutex> lock(mutex_);
-  spChildren_.erase(
-    std::remove_if(spChildren_.begin(), spChildren_.end(),
-      [child](const std::shared_ptr<LoggerNode>& ptr) {
-        return ptr.get() == child;
-      }),
-    spChildren_.end()
-  );
+  spChildren_.erase(std::remove_if(spChildren_.begin(), spChildren_.end(),
+                                   [child](const std::shared_ptr<LoggerNode>& ptr) { return ptr.get() == child; }),
+                    spChildren_.end());
 }
 
 std::shared_ptr<LoggerNode> LoggerNode::getOrInitChild(const std::string& fullName) {
@@ -290,45 +280,42 @@ Logger::Logger(std::shared_ptr<LoggerNode> node)
       info(this, Level::INFO),
       warning(this, Level::WARNING),
       error(this, kLevelError),
-      critical(this, Level::CRITICAL) {
-}
+      critical(this, Level::CRITICAL) {}
 
 // The LogProxy members always bind to `this` (not to `other`), so copy/move
 // only needs to move spNode_ over; the proxies are already correctly bound by
 // their member-initializer-list construction above.
-Logger::Logger(const Logger &other)
+Logger::Logger(const Logger& other)
     : spNode_(other.spNode_),
       debug(this, kLevelDebug),
       info(this, Level::INFO),
       warning(this, Level::WARNING),
       error(this, kLevelError),
-      critical(this, Level::CRITICAL) {
-}
+      critical(this, Level::CRITICAL) {}
 
-Logger &Logger::operator=(const Logger &other) {
+Logger& Logger::operator=(const Logger& other) {
   if (this != &other) {
     spNode_ = other.spNode_;
   }
   return *this;
 }
 
-Logger::Logger(Logger &&other) noexcept
+Logger::Logger(Logger&& other) noexcept
     : spNode_(std::move(other.spNode_)),
       debug(this, kLevelDebug),
       info(this, Level::INFO),
       warning(this, Level::WARNING),
       error(this, kLevelError),
-      critical(this, Level::CRITICAL) {
-}
+      critical(this, Level::CRITICAL) {}
 
-Logger &Logger::operator=(Logger &&other) noexcept {
+Logger& Logger::operator=(Logger&& other) noexcept {
   if (this != &other) {
     spNode_ = std::move(other.spNode_);
   }
   return *this;
 }
 
-void Logger::redirectTo(const std::string &targetLoggerName) {
+void Logger::redirectTo(const std::string& targetLoggerName) {
   auto targetLogger = logging::getLogger(targetLoggerName);
   if (!targetLogger.getNode()) {
     throw std::invalid_argument("Cannot redirect to null logger");
@@ -368,7 +355,7 @@ void Logger::redirectTo(const std::string &targetLoggerName) {
   spNode_ = targetNode;
 }
 
-Logger getLogger(const std::string &name) {
+Logger getLogger(const std::string& name) {
   auto& root = RootLoggerNode();
   auto spNode = root->getOrInitChild(name);
   if (!spNode) {

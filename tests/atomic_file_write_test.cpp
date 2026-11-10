@@ -44,10 +44,9 @@ TEST_F(AtomicFileWriteTest, ReplacesExistingFile) {
   EXPECT_EQ(body, "{\"ok\":true}");
 }
 
-std::string ReadAll(const std::string &path) {
+std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
-  return std::string((std::istreambuf_iterator<char>(in)),
-                     std::istreambuf_iterator<char>());
+  return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
 // Two writers of one path at once each succeed, the file is one of theirs
@@ -68,16 +67,15 @@ TEST_F(AtomicFileWriteTest, WritersOfOnePathAtOnceAllSucceed) {
       }
     });
   }
-  for (std::thread &writer : writers) {
+  for (std::thread& writer : writers) {
     writer.join();
   }
   EXPECT_EQ(failed.load(), 0);
   const std::string body = ReadAll(path);
   ASSERT_EQ(body.size(), 32u * 1024u);
-  EXPECT_EQ(body.find_first_not_of(body[0]), std::string::npos)
-      << "one writer's content, whole";
+  EXPECT_EQ(body.find_first_not_of(body[0]), std::string::npos) << "one writer's content, whole";
   int stray = 0;
-  for (const auto &entry : std::filesystem::directory_iterator(dir_)) {
+  for (const auto& entry : std::filesystem::directory_iterator(dir_)) {
     stray += entry.path().filename().string() != "shared.bin" ? 1 : 0;
   }
   EXPECT_EQ(stray, 0);
@@ -109,10 +107,8 @@ TEST_F(AtomicFileWriteTest, AFileBeingReadIsReplaced) {
 TEST_F(AtomicFileWriteTest, APrefixAndItsPayloadAreOneFile) {
   const auto path = (dir_ / "block").string();
   const std::vector<uint8_t> payload = {1, 2, 3, 0, 255};
-  ASSERT_TRUE(AtomicFileWrite::Write(path, std::string_view("PPBA"), payload,
-                                     AtomicFileWrite::Sync::None));
-  EXPECT_EQ(ReadAll(path),
-            std::string("PPBA") + std::string("\x01\x02\x03\x00\xff", 5));
+  ASSERT_TRUE(AtomicFileWrite::Write(path, std::string_view("PPBA"), payload, AtomicFileWrite::Sync::None));
+  EXPECT_EQ(ReadAll(path), std::string("PPBA") + std::string("\x01\x02\x03\x00\xff", 5));
 }
 
 TEST_F(AtomicFileWriteTest, CreatesParentDirs) {

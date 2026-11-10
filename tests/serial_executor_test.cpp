@@ -223,7 +223,8 @@ TEST(ManualExecutorTest, RunAndWaitDrainsInOrderOnTheCaller) {
 TEST(SerialExecutorTest, BothAreSerialExecutors) {
   pp::ThreadExecutor thread;
   pp::ManualExecutor manual;
-  for (pp::SerialExecutor* executor : {static_cast<pp::SerialExecutor*>(&thread), static_cast<pp::SerialExecutor*>(&manual)}) {
+  for (pp::SerialExecutor* executor :
+       {static_cast<pp::SerialExecutor*>(&thread), static_cast<pp::SerialExecutor*>(&manual)}) {
     int ran = 0;
     executor->RunAndWait([&ran]() { ++ran; });
     EXPECT_EQ(ran, 1);

@@ -34,20 +34,17 @@ public:
     new (&storage_) StorageType(value);
   }
 
-  template <typename U = T,
-            typename = typename std::enable_if<!std::is_reference<U>::value>::type>
+  template <typename U = T, typename = typename std::enable_if<!std::is_reference<U>::value>::type>
   ResultOrError(T&& value) : hasValue_(true) {
     new (&storage_) T(std::move(value));
   }
 
-  template <typename U = E,
-            typename = typename std::enable_if<std::is_base_of<RoeErrorBase, U>::value>::type>
+  template <typename U = E, typename = typename std::enable_if<std::is_base_of<RoeErrorBase, U>::value>::type>
   ResultOrError(const E& err) : hasValue_(false) {
     new (&storage_) E(err);
   }
 
-  template <typename U = E,
-            typename = typename std::enable_if<std::is_base_of<RoeErrorBase, U>::value>::type>
+  template <typename U = E, typename = typename std::enable_if<std::is_base_of<RoeErrorBase, U>::value>::type>
   ResultOrError(E&& err) : hasValue_(false) {
     new (&storage_) E(std::move(err));
   }
@@ -154,15 +151,14 @@ public:
   T& operator*() { return value(); }
 
   template <typename U = T>
-  typename std::enable_if<!std::is_reference<U>::value, typename std::remove_reference<T>::type*>::type
-  operator->() const {
+  typename std::enable_if<!std::is_reference<U>::value, typename std::remove_reference<T>::type*>::type operator->()
+      const {
     using StorageType = typename std::remove_reference<T>::type;
     return reinterpret_cast<const StorageType*>(&storage_);
   }
 
   template <typename U = T>
-  typename std::enable_if<!std::is_reference<U>::value, typename std::remove_reference<T>::type*>::type
-  operator->() {
+  typename std::enable_if<!std::is_reference<U>::value, typename std::remove_reference<T>::type*>::type operator->() {
     using StorageType = typename std::remove_reference<T>::type;
     return reinterpret_cast<StorageType*>(&storage_);
   }
@@ -189,14 +185,12 @@ class ResultOrError<void, E> {
 public:
   ResultOrError() : hasValue_(true) {}
 
-  template <typename U = E,
-            typename = typename std::enable_if<std::is_base_of<RoeErrorBase, U>::value>::type>
+  template <typename U = E, typename = typename std::enable_if<std::is_base_of<RoeErrorBase, U>::value>::type>
   ResultOrError(const E& err) : hasValue_(false) {
     new (&storage_) E(err);
   }
 
-  template <typename U = E,
-            typename = typename std::enable_if<std::is_base_of<RoeErrorBase, U>::value>::type>
+  template <typename U = E, typename = typename std::enable_if<std::is_base_of<RoeErrorBase, U>::value>::type>
   ResultOrError(E&& err) : hasValue_(false) {
     new (&storage_) E(std::move(err));
   }
@@ -285,6 +279,5 @@ private:
 };
 
 } // namespace pp
-
 
 #endif // PP_COMMON_RESULT_OR_ERROR_H

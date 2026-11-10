@@ -30,7 +30,7 @@ namespace {
 
 /** What a temp file is made of, in order. */
 struct Part {
-  const char *data = nullptr;
+  const char* data = nullptr;
   size_t size = 0;
 };
 
@@ -43,11 +43,12 @@ constexpr int kRenameRetries = 6;
 /** The replace was refused for a handle someone else has open — one that closes
  * soon, unlike a missing directory. */
 bool Transient(const DWORD error) {
-  return error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION ||
-         error == ERROR_LOCK_VIOLATION;
+  return error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION || error == ERROR_LOCK_VIOLATION;
 }
 
-uint64_t Pid() { return static_cast<uint64_t>(_getpid()); }
+uint64_t Pid() {
+  return static_cast<uint64_t>(_getpid());
+}
 
 Roe<void> FsyncFile(const std::filesystem::path& path) {
   const HANDLE handle = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
@@ -75,28 +76,25 @@ void FsyncDirectory(const std::filesystem::path& dir) {
 
 Roe<void> RenameOver(const std::filesystem::path& tmp_path, const std::filesystem::path& final_path) {
   for (int attempt = 0;; ++attempt) {
-    if (MoveFileExW(tmp_path.c_str(), final_path.c_str(),
-                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    if (MoveFileExW(tmp_path.c_str(), final_path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
       return {};
     }
     const DWORD error = GetLastError();
     if (!Transient(error) || attempt >= kRenameRetries) {
-      return Error(
-          "Failed to rename atomic write into place: " + final_path.string() +
-          " (error " + std::to_string(error) + ")");
+      return Error("Failed to rename atomic write into place: " + final_path.string() + " (error " +
+                   std::to_string(error) + ")");
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(2 << attempt));
   }
 }
 
 /** Windows ACLs are not modeled: the temp file keeps the directory's inherited ACL. */
-Roe<void> WriteTemp(const std::filesystem::path &tmp_path,
-                    std::initializer_list<Part> parts) {
+Roe<void> WriteTemp(const std::filesystem::path& tmp_path, std::initializer_list<Part> parts) {
   std::ofstream out(tmp_path, std::ios::binary | std::ios::trunc);
   if (!out) {
     return Error("Failed to open temp file for atomic write: " + tmp_path.string());
   }
-  for (const Part &part : parts) {
+  for (const Part& part : parts) {
     out.write(part.data, static_cast<std::streamsize>(part.size));
   }
   out.flush();
@@ -108,7 +106,9 @@ Roe<void> WriteTemp(const std::filesystem::path &tmp_path,
 
 #else
 
-uint64_t Pid() { return static_cast<uint64_t>(::getpid()); }
+uint64_t Pid() {
+  return static_cast<uint64_t>(::getpid());
+}
 
 Roe<void> FsyncFile(const std::filesystem::path& path) {
   const int fd = ::open(path.c_str(), O_RDONLY);
@@ -146,13 +146,12 @@ Roe<void> RenameOver(const std::filesystem::path& tmp_path, const std::filesyste
  * Owner-only (0600) from the moment the file exists — config / preferences can hold secrets — rather
  * than widening the window with default permissions until a later chmod.
  */
-Roe<void> WriteTemp(const std::filesystem::path &tmp_path,
-                    std::initializer_list<Part> parts) {
+Roe<void> WriteTemp(const std::filesystem::path& tmp_path, std::initializer_list<Part> parts) {
   const int fd = ::open(tmp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
   if (fd < 0) {
     return Error(std::string("Failed to open temp file for atomic write: ") + std::strerror(errno));
   }
-  for (const Part &part : parts) {
+  for (const Part& part : parts) {
     size_t written = 0;
     while (written < part.size) {
       const ssize_t n = ::write(fd, part.data + written, part.size - written);
@@ -162,8 +161,7 @@ Roe<void> WriteTemp(const std::filesystem::path &tmp_path,
         }
         const int err = errno;
         ::close(fd);
-        return Error(std::string("Failed to write temp file: ") +
-                     std::strerror(err));
+        return Error(std::string("Failed to write temp file: ") + std::strerror(err));
       }
       written += static_cast<size_t>(n);
     }
@@ -187,8 +185,7 @@ std::filesystem::path MakeTempPath(const std::filesystem::path& final_path) {
   return tmp;
 }
 
-Roe<void> WriteBytes(const std::string &path, std::initializer_list<Part> parts,
-                     const AtomicFileWrite::Sync sync) {
+Roe<void> WriteBytes(const std::string& path, std::initializer_list<Part> parts, const AtomicFileWrite::Sync sync) {
   const bool durable = sync == AtomicFileWrite::Sync::Durable;
   const std::filesystem::path final_path(path);
   std::error_code ec;
@@ -219,28 +216,18 @@ Roe<void> WriteBytes(const std::string &path, std::initializer_list<Part> parts,
 
 } // namespace
 
-Roe<void> AtomicFileWrite::Write(const std::string &path, std::string_view data,
-                                 const Sync sync) {
+Roe<void> AtomicFileWrite::Write(const std::string& path, std::string_view data, const Sync sync) {
   return WriteBytes(path, {Part{data.data(), data.size()}}, sync);
 }
 
-Roe<void> AtomicFileWrite::Write(const std::string &path,
-                                 const std::vector<uint8_t> &data,
-                                 const Sync sync) {
-  return WriteBytes(
-      path, {Part{reinterpret_cast<const char *>(data.data()), data.size()}},
-      sync);
+Roe<void> AtomicFileWrite::Write(const std::string& path, const std::vector<uint8_t>& data, const Sync sync) {
+  return WriteBytes(path, {Part{reinterpret_cast<const char*>(data.data()), data.size()}}, sync);
 }
 
-Roe<void> AtomicFileWrite::Write(const std::string &path,
-                                 std::string_view prefix,
-                                 const std::vector<uint8_t> &data,
+Roe<void> AtomicFileWrite::Write(const std::string& path, std::string_view prefix, const std::vector<uint8_t>& data,
                                  const Sync sync) {
   return WriteBytes(
-      path,
-      {Part{prefix.data(), prefix.size()},
-       Part{reinterpret_cast<const char *>(data.data()), data.size()}},
-      sync);
+      path, {Part{prefix.data(), prefix.size()}, Part{reinterpret_cast<const char*>(data.data()), data.size()}}, sync);
 }
 
 } // namespace pp

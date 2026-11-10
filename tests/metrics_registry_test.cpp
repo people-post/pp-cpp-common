@@ -47,9 +47,8 @@ TEST(MetricsRegistryTest, CollectorsRunAtScrapeUntilRemoved) {
   MetricsRegistry registry;
   int load = 7;
   {
-    ScopedMetricsCollector collector(registry, [&load](MetricsRegistry& r) {
-      r.Gauge("pp_test_load", "Load.").Set(load);
-    });
+    ScopedMetricsCollector collector(registry,
+                                     [&load](MetricsRegistry& r) { r.Gauge("pp_test_load", "Load.").Set(load); });
     EXPECT_TRUE(Has(registry.RenderPrometheus(), "pp_test_load 7"));
     load = 9;
     EXPECT_TRUE(Has(registry.RenderPrometheus(), "pp_test_load 9"));
@@ -73,7 +72,7 @@ TEST(MetricsRegistryTest, FixedLabelCountsFoldUnknownKeysIntoOther) {
   const auto counts = pp::FixedLabelCounts(by_key, known);
   ASSERT_EQ(counts.size(), 3u);
   EXPECT_EQ(counts[0], (std::pair<std::string, size_t>{"a", 3}));
-  EXPECT_EQ(counts[1], (std::pair<std::string, size_t>{"b", 0}));  // present at zero: the series stays
+  EXPECT_EQ(counts[1], (std::pair<std::string, size_t>{"b", 0})); // present at zero: the series stays
   EXPECT_EQ(counts[2], (std::pair<std::string, size_t>{"other", 3}));
 
   const auto empty = pp::FixedLabelCounts({}, known);

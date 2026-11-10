@@ -14,4 +14,3 @@ bool LocalTime(time_t time, std::tm* out);
 bool UtcTime(time_t time, std::tm* out);
 
 } // namespace pp::civil_time
-
