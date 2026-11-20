@@ -28,11 +28,11 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-CI (`.github/workflows/build.yml`) builds and tests on Ubuntu 24.04, Windows 2022, and macOS 14 for every PR to `develop` / `main`.
+CI (`.github/workflows/build.yml`) builds and tests on Ubuntu 24.04, Windows 2022, and macOS 14 for every PR to `main`.
 
 ## Consume (FetchContent)
 
-Pin a **release tag cut from `main`** (do not track `develop` or floating branch tips):
+Pin a **release tag cut from `main`** (do not track floating branch tips such as `main`):
 
 ```cmake
 include(FetchContent)
@@ -45,7 +45,7 @@ FetchContent_MakeAvailable(pp_cpp_common)
 target_link_libraries(your_target PUBLIC pp_common)
 ```
 
-Release flow: land on `develop` → merge to `main` → tag `vX.Y.Z` on `main`.
+Release flow: land on `main` (the only branch; there is no `develop`) → tag `vX.Y.Z` on `main`.
 
 ## Formatting
 
