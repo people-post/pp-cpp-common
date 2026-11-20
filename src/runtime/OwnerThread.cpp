@@ -24,8 +24,8 @@ OwnerThread::OwnerThread(std::string name, OwnerThreadMode mode, std::function<v
   MetricsRegistry& registry = MetricsRegistry::Global();
   wait_seconds_ = &registry.Histogram("pp_runtime_task_wait_seconds", "Owner thread task time queued before it ran.",
                                       kBounds, {{"owner", name_}});
-  run_seconds_ = &registry.Histogram("pp_runtime_task_run_seconds", "Owner thread task run time.", kBounds,
-                                     {{"owner", name_}});
+  run_seconds_ =
+      &registry.Histogram("pp_runtime_task_run_seconds", "Owner thread task run time.", kBounds, {{"owner", name_}});
 }
 
 OwnerThread::~OwnerThread() {
@@ -56,7 +56,7 @@ void OwnerThread::Stop() {
   cv_.notify_all();
   if (thread_.joinable()) {
     if (thread_.get_id() == std::this_thread::get_id()) {
-      thread_.detach();  // Stop from one of our own tasks: the loop exits after it returns
+      thread_.detach(); // Stop from one of our own tasks: the loop exits after it returns
     } else {
       thread_.join();
     }
@@ -160,7 +160,7 @@ void OwnerThread::RunTask(Queued& queued) {
   } catch (...) {
     OwnerLog().error << name_ << " task threw a non-std exception";
   }
-  task = nullptr;  // destroy captures on the owner
+  task = nullptr; // destroy captures on the owner
   run_seconds_->Observe(Seconds(std::chrono::steady_clock::now() - started).count());
 }
 

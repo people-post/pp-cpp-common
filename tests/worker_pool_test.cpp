@@ -100,14 +100,16 @@ TEST(WorkerPoolTest, PostAndReplyReturnsResult) {
   bool done = false;
   int value = 0;
 
-  pool.PostAndReply<int>(WorkerLane::Normal, []() { return 42; }, [&](int result) {
-    value = result;
-    {
-      std::lock_guard lock(mu);
-      done = true;
-    }
-    cv.notify_one();
-  });
+  pool.PostAndReply<int>(
+      WorkerLane::Normal, []() { return 42; },
+      [&](int result) {
+        value = result;
+        {
+          std::lock_guard lock(mu);
+          done = true;
+        }
+        cv.notify_one();
+      });
 
   {
     std::unique_lock lock(mu);
@@ -153,10 +155,12 @@ TEST(WorkerPoolTest, ShutdownDropsQueuedWorkAndJoins) {
     cv.wait(lock, [&]() { return allow_finish; });
   });
 
-  WaitUntil([&]() {
-    std::lock_guard lock(mu);
-    return started;
-  }, std::chrono::milliseconds(2000));
+  WaitUntil(
+      [&]() {
+        std::lock_guard lock(mu);
+        return started;
+      },
+      std::chrono::milliseconds(2000));
 
   // pool(1) clamps to kMinThreadCount (2). Pause *before* posting Background so the idle
   // second worker cannot dequeue it while Normal still holds the first.
@@ -196,8 +200,7 @@ TEST(WorkerPoolTest, ThreadCountIsClamped) {
     large_pool.Post(WorkerLane::Normal, [&]() { large_ran.fetch_add(1); });
   }
 
-  WaitUntil([&]() { return small_ran.load() == 4 && large_ran.load() == 4; },
-            std::chrono::milliseconds(3000));
+  WaitUntil([&]() { return small_ran.load() == 4 && large_ran.load() == 4; }, std::chrono::milliseconds(3000));
 
   small_pool.Shutdown();
   large_pool.Shutdown();
@@ -222,10 +225,12 @@ TEST(WorkerPoolTest, ShutdownAbandonsJoinAfterBudget) {
     }
   });
 
-  WaitUntil([&]() {
-    std::lock_guard lock(mu);
-    return started;
-  }, std::chrono::milliseconds(2000));
+  WaitUntil(
+      [&]() {
+        std::lock_guard lock(mu);
+        return started;
+      },
+      std::chrono::milliseconds(2000));
 
   const auto t0 = std::chrono::steady_clock::now();
   EXPECT_FALSE(pool.Shutdown(std::chrono::milliseconds(100)));
@@ -258,10 +263,12 @@ TEST(WorkerPoolTest, DetachedWorkerSurvivesPoolDestruction) {
       ran.fetch_add(1);
     });
 
-    WaitUntil([&]() {
-      std::lock_guard lock(mu);
-      return started;
-    }, std::chrono::milliseconds(2000));
+    WaitUntil(
+        [&]() {
+          std::lock_guard lock(mu);
+          return started;
+        },
+        std::chrono::milliseconds(2000));
 
     // A short budget forces Shutdown to detach the still-running worker.
     EXPECT_FALSE(pool.Shutdown(std::chrono::milliseconds(50)));
@@ -273,4 +280,3 @@ TEST(WorkerPoolTest, DetachedWorkerSurvivesPoolDestruction) {
   release.store(true, std::memory_order_release);
   WaitUntil([&]() { return ran.load() == 1; }, std::chrono::milliseconds(2000));
 }
-

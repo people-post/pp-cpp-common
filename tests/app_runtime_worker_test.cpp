@@ -55,10 +55,12 @@ TEST(AppRuntimeWorkerTest, PostWorkerCriticalJumpsQueue) {
     order.push_back("critical");
   });
 
-  WaitUntil([&]() {
-    std::lock_guard lock(mu);
-    return order.size() == 1;
-  }, std::chrono::milliseconds(2000));
+  WaitUntil(
+      [&]() {
+        std::lock_guard lock(mu);
+        return order.size() == 1;
+      },
+      std::chrono::milliseconds(2000));
   {
     std::lock_guard lock(mu);
     ASSERT_EQ(order.size(), 1u);
@@ -71,10 +73,12 @@ TEST(AppRuntimeWorkerTest, PostWorkerCriticalJumpsQueue) {
   }
   cv.notify_all();
 
-  WaitUntil([&]() {
-    std::lock_guard lock(mu);
-    return order.size() == 2;
-  }, std::chrono::milliseconds(2000));
+  WaitUntil(
+      [&]() {
+        std::lock_guard lock(mu);
+        return order.size() == 2;
+      },
+      std::chrono::milliseconds(2000));
   {
     std::lock_guard lock(mu);
     EXPECT_EQ(order[0], "critical");

@@ -16,13 +16,11 @@ public:
   static void Post(WorkerLane lane, std::function<void()> task);
 
   template <typename Result>
-  static void PostAndReply(WorkerLane lane, std::function<Result()> work,
-                           std::function<void(Result)> on_done);
+  static void PostAndReply(WorkerLane lane, std::function<Result()> work, std::function<void(Result)> on_done);
 };
 
 template <typename Result>
-void WorkerDispatch::PostAndReply(WorkerLane lane, std::function<Result()> work,
-                                  std::function<void(Result)> on_done) {
+void WorkerDispatch::PostAndReply(WorkerLane lane, std::function<Result()> work, std::function<void(Result)> on_done) {
   Post(lane, [work = std::move(work), on_done = std::move(on_done)]() mutable {
     Result result = work();
     if (on_done) {

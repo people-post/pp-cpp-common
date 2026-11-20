@@ -114,8 +114,7 @@ public:
   static void PostWorkerBackground(std::function<void()> task);
 
   template <typename Result>
-  static void PostWorkerAndReply(WorkerLane lane, std::function<Result()> work,
-                                 std::function<void(Result)> on_done) {
+  static void PostWorkerAndReply(WorkerLane lane, std::function<Result()> work, std::function<void(Result)> on_done) {
     // Through PostWorker so the teardown gate applies.
     PostWorker(lane, [work = std::move(work), on_done = std::move(on_done)]() mutable {
       Result result = work();
@@ -126,13 +125,10 @@ public:
   }
 
   template <typename Result>
-  static void PostWorkerAndReplyOnUI(WorkerLane lane, std::function<Result()> work,
-                                     std::function<void(Result)> reply) {
+  static void PostWorkerAndReplyOnUI(WorkerLane lane, std::function<Result()> work, std::function<void(Result)> reply) {
     PostWorker(lane, [work = std::move(work), reply = std::move(reply)]() mutable {
       Result result = work();
-      PostUI([reply = std::move(reply), result = std::move(result)]() mutable {
-        reply(std::move(result));
-      });
+      PostUI([reply = std::move(reply), result = std::move(result)]() mutable { reply(std::move(result)); });
     });
   }
 
@@ -156,8 +152,7 @@ public:
   static void PostCoordinatorCritical(std::function<void()> task);
   static void PostCoordinatorNormal(std::function<void()> task);
   static void PostCoordinatorBackground(std::function<void()> task);
-  static uint64_t ScheduleCoordinatorRepeating(std::chrono::milliseconds interval,
-                                               std::function<void()> fn);
+  static uint64_t ScheduleCoordinatorRepeating(std::chrono::milliseconds interval, std::function<void()> fn);
   static uint64_t ScheduleCoordinatorOneShot(std::chrono::milliseconds delay, std::function<void()> fn);
   static void CancelCoordinatorTimer(uint64_t timer_id);
 

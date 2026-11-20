@@ -38,4 +38,3 @@ template <typename T>
 using Roe = ResultOrError<T, Error>;
 
 } // namespace pp
-

@@ -46,3 +46,7 @@ target_link_libraries(your_target PUBLIC pp_common)
 ```
 
 Release flow: land on `develop` → merge to `main` → tag `vX.Y.Z` on `main`.
+
+## Formatting
+
+Every first-party C/C++ source is formatted with [`.clang-format`](.clang-format) by exactly clang-format 23.1.5 (`pip install clang-format==23.1.5`; other versions format differently). Run `./scripts/check_format.sh --fix` before committing; CI fails on an unformatted file. Vendored code is left as it came.

@@ -13,26 +13,26 @@
 #include <string>
 #include <vector>
 
+using pp::InputArchive;
+using pp::OutputArchive;
 using pp::common::Array;
 using pp::common::ArrayPtr;
+using pp::common::asNonNegInt;
 using pp::common::FiFoMap;
 using pp::common::Null;
 using pp::common::Object;
 using pp::common::ObjectPtr;
 using pp::common::Value;
 using pp::common::ValueWire;
-using pp::common::asNonNegInt;
 using pp::common::io::objectFromJsonString;
 using pp::common::io::objectToJsonString;
 using pp::common::io::valueFromJsonString;
 using pp::common::io::valueToJsonString;
-using pp::InputArchive;
-using pp::OutputArchive;
 
 namespace {
 
 template <typename T>
-std::string archivePack(const T &value) {
+std::string archivePack(const T& value) {
   std::ostringstream oss(std::ios::binary);
   OutputArchive ar(oss);
   ar & value;
@@ -40,15 +40,14 @@ std::string archivePack(const T &value) {
 }
 
 template <typename T>
-bool archiveUnpack(const std::string &data, T &value) {
+bool archiveUnpack(const std::string& data, T& value) {
   std::istringstream iss(data, std::ios::binary);
   InputArchive ar(iss);
   ar & value;
   return !ar.failed();
 }
 
-std::string archivePackMetaWire(const std::string &key, uint16_t tag,
-                                const std::string &payload,
+std::string archivePackMetaWire(const std::string& key, uint16_t tag, const std::string& payload,
                                 uint64_t entryCount = 1) {
   std::ostringstream oss(std::ios::binary);
   OutputArchive ar(oss);
@@ -147,8 +146,7 @@ TEST(MetaTest, InsertionOrder_PreservedOnWire) {
 
 TEST(MetaTest, UnknownTag_IsSkipped) {
   constexpr uint16_t kUnknownWireTag = 999;
-  const std::string wire =
-      archivePackMetaWire("x", kUnknownWireTag, /*payload*/ "abc");
+  const std::string wire = archivePackMetaWire("x", kUnknownWireTag, /*payload*/ "abc");
 
   Object out;
   ASSERT_TRUE(archiveUnpack(wire, out));
@@ -169,7 +167,7 @@ TEST(MetaTest, DuplicateKeys_AreRejected) {
     int64_t v = 1;
     par & v;
     std::string payload = p.str();
-    ar & key & ValueWire::TAG_I64 & payload;
+    ar & key & ValueWire::TAG_I64& payload;
   }
   {
     std::ostringstream p(std::ios::binary);
@@ -177,7 +175,7 @@ TEST(MetaTest, DuplicateKeys_AreRejected) {
     uint64_t v = 2;
     par & v;
     std::string payload = p.str();
-    ar & key & ValueWire::TAG_U64 & payload;
+    ar & key & ValueWire::TAG_U64& payload;
   }
 
   // A duplicate key is malformed input: decode must fail, not silently
@@ -302,8 +300,7 @@ TEST(MetaTest, SetUIntForJson_StringFallback) {
 }
 
 TEST(MetaTest, AsNonNegInt_DecimalAndHexStrings) {
-  EXPECT_EQ(asNonNegInt(Value(std::string("18446744073709551615"))).value_or(0),
-            std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(asNonNegInt(Value(std::string("18446744073709551615"))).value_or(0), std::numeric_limits<uint64_t>::max());
   EXPECT_EQ(asNonNegInt(Value(std::string("0x10"))).value_or(0), 16u);
   EXPECT_FALSE(asNonNegInt(Value(std::string("-1"))).has_value());
   EXPECT_FALSE(asNonNegInt(Value(std::string("12x"))).has_value());
@@ -331,7 +328,7 @@ TEST(MetaTest, Json_InsertionOrderPreserved) {
 TEST(MetaTest, Json_RootArrayAndUtf8) {
   auto r = valueFromJsonString(R"(["hello", "\u4e16\u754c"])");
   ASSERT_TRUE(r.isOk());
-  auto *arr = std::get_if<ArrayPtr>(&r.value());
+  auto* arr = std::get_if<ArrayPtr>(&r.value());
   ASSERT_TRUE(arr && *arr);
   ASSERT_EQ((*arr)->elements.size(), 2u);
   EXPECT_EQ(std::get<std::string>((*arr)->elements[0]), "hello");
@@ -408,23 +405,28 @@ TEST(MetaTest, Json_EncodeSanitizesInvalidUtf8InStringValue) {
   // this library's own parser can read back, substituting U+FFFD for the bad
   // byte(s) instead of emitting broken UTF-8 verbatim.
   Object m;
-  m.set("k", std::string("a\xC0\x80""b")); // overlong-encoded NUL in the middle
+  m.set("k", std::string("a\xC0\x80"
+                         "b")); // overlong-encoded NUL in the middle
   const std::string j = objectToJsonString(m);
   auto reparsed = valueFromJsonString(j);
   ASSERT_TRUE(reparsed.isOk()) << "objectToJsonString produced invalid JSON: " << j;
-  auto *obj = std::get_if<ObjectPtr>(&reparsed.value());
+  auto* obj = std::get_if<ObjectPtr>(&reparsed.value());
   ASSERT_TRUE(obj && *obj);
   auto v = (*obj)->getString("k");
   ASSERT_TRUE(v.has_value());
   // Each invalid byte (0xC0, then the now-isolated 0x80) is replaced on its
   // own, so the two-byte overlong sequence becomes two U+FFFD.
-  EXPECT_EQ(*v, "a\xEF\xBF\xBD\xEF\xBF\xBD""b");
+  EXPECT_EQ(*v,
+            "a\xEF\xBF\xBD\xEF\xBF\xBD"
+            "b");
 }
 
 TEST(MetaTest, Json_EncodeSanitizesInvalidUtf8InObjectKey) {
   // Same, but for the error-message path (which can embed a raw object key).
   Object m;
-  m.set(std::string("bad\xFF""key"), Value(std::numeric_limits<double>::quiet_NaN()));
+  m.set(std::string("bad\xFF"
+                    "key"),
+        Value(std::numeric_limits<double>::quiet_NaN()));
   const std::string j = objectToJsonString(m);
   auto reparsed = valueFromJsonString(j);
   ASSERT_TRUE(reparsed.isOk()) << "objectToJsonString produced invalid JSON: " << j;

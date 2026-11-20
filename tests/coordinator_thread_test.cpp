@@ -65,10 +65,12 @@ TEST(CoordinatorThreadTest, CriticalRunsBeforeNormal) {
   }
   cv.notify_all();
 
-  WaitUntil([&]() {
-    std::lock_guard lock(mu);
-    return order.size() == 2;
-  }, std::chrono::milliseconds(2000));
+  WaitUntil(
+      [&]() {
+        std::lock_guard lock(mu);
+        return order.size() == 2;
+      },
+      std::chrono::milliseconds(2000));
   {
     std::lock_guard lock(mu);
     ASSERT_EQ(order.size(), 2u);
@@ -115,8 +117,7 @@ TEST(CoordinatorThreadTest, CancelTimerPreventsFire) {
 
   std::atomic<int> count{0};
   // Long delay so Cancel wins without sleeping past a short deadline.
-  const uint64_t id =
-      coordinator.ScheduleOneShot(std::chrono::seconds(30), [&]() { count.fetch_add(1); });
+  const uint64_t id = coordinator.ScheduleOneShot(std::chrono::seconds(30), [&]() { count.fetch_add(1); });
   coordinator.CancelTimer(id);
 
   std::atomic<bool> probe{false};

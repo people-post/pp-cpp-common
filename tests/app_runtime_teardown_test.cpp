@@ -76,7 +76,7 @@ TEST_F(AppRuntimeTeardownTest, WaitsForRunningTaskAndReportsTimeout) {
   }
   EXPECT_FALSE(AppRuntime::QuiesceForTeardown(30ms)) << "running task past budget must be reported";
   release = true;
-  while (!finished) {  // task captures locals — let it return before they go out of scope
+  while (!finished) { // task captures locals — let it return before they go out of scope
     std::this_thread::sleep_for(1ms);
   }
 }

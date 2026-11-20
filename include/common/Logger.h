@@ -34,8 +34,7 @@ inline constexpr Level kLevelError = Level::ERROR;
 class Handler {
 public:
   virtual ~Handler() = default;
-  virtual void emit(Level level, const std::string &loggerName,
-                    const std::string &message) = 0;
+  virtual void emit(Level level, const std::string& loggerName, const std::string& message) = 0;
 
   void setLevel(Level level) { level_ = level; }
   Level getLevel() const { return level_; }
@@ -46,16 +45,14 @@ protected:
 
 class ConsoleHandler : public Handler {
 public:
-  void emit(Level level, const std::string &loggerName,
-            const std::string &message) override;
+  void emit(Level level, const std::string& loggerName, const std::string& message) override;
 };
 
 class FileHandler : public Handler {
 public:
-  explicit FileHandler(const std::string &filename);
+  explicit FileHandler(const std::string& filename);
   ~FileHandler() override;
-  void emit(Level level, const std::string &loggerName,
-            const std::string &message) override;
+  void emit(Level level, const std::string& loggerName, const std::string& message) override;
 
 private:
   std::ofstream file_;
@@ -68,33 +65,35 @@ class LoggerNode;
 
 class LogProxy {
 public:
-  LogProxy(Logger *logger, Level level);
+  LogProxy(Logger* logger, Level level);
 
-  template <typename T> LogStream operator<<(const T &value);
+  template <typename T>
+  LogStream operator<<(const T& value);
 
 private:
-  Logger *logger_;
+  Logger* logger_;
   Level level_;
 };
 
 class LogStream {
 public:
-  LogStream(Logger *logger, Level level);
+  LogStream(Logger* logger, Level level);
   ~LogStream();
 
-  LogStream(const LogStream &) = delete;
-  LogStream &operator=(const LogStream &) = delete;
+  LogStream(const LogStream&) = delete;
+  LogStream& operator=(const LogStream&) = delete;
 
-  LogStream(LogStream &&other) noexcept;
-  LogStream &operator=(LogStream &&other) noexcept;
+  LogStream(LogStream&& other) noexcept;
+  LogStream& operator=(LogStream&& other) noexcept;
 
-  template <typename T> LogStream &operator<<(const T &value) {
+  template <typename T>
+  LogStream& operator<<(const T& value) {
     stream_ << value;
     return *this;
   }
 
 private:
-  Logger *logger_;
+  Logger* logger_;
   Level level_;
   std::ostringstream stream_;
   bool moved_;
@@ -102,14 +101,14 @@ private:
 
 class LoggerNode : public std::enable_shared_from_this<LoggerNode> {
 public:
-  explicit LoggerNode(const std::string &name);
+  explicit LoggerNode(const std::string& name);
   ~LoggerNode() = default;
 
   void setLevel(Level level) { level_.store(level, std::memory_order_relaxed); }
   Level getLevel() const { return level_.load(std::memory_order_relaxed); }
 
   void addHandler(std::shared_ptr<Handler> spHandler);
-  void addFileHandler(const std::string &filename, Level level);
+  void addFileHandler(const std::string& filename, Level level);
 
   void setPropagate(bool propagate) { propagate_.store(propagate, std::memory_order_relaxed); }
   bool getPropagate() const { return propagate_.load(std::memory_order_relaxed); }
@@ -130,9 +129,9 @@ public:
     return spChildren_;
   }
 
-  void log(Level level, const std::string &message);
+  void log(Level level, const std::string& message);
 
-  const std::string &getName() const { return name_; }
+  const std::string& getName() const { return name_; }
   std::string getFullName() const;
 
   std::shared_ptr<LoggerNode> getOrInitChild(const std::string& fullName);
@@ -140,15 +139,16 @@ public:
 private:
   std::shared_ptr<LoggerNode> getOrInitDirectChild(const std::string& name);
 
-  void logWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName);
-  void logToHandlersWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName);
-  std::string formatMessage(Level level, const std::string &message, const std::string &originatingLoggerName);
+  void logWithOriginatingName(Level level, const std::string& message, const std::string& originatingLoggerName);
+  void logToHandlersWithOriginatingName(Level level, const std::string& message,
+                                        const std::string& originatingLoggerName);
+  std::string formatMessage(Level level, const std::string& message, const std::string& originatingLoggerName);
   std::string levelToString(Level level);
 
   std::string name_;
-  std::weak_ptr<LoggerNode> parent_;        // guarded by mutex_
-  std::atomic<Level> level_{ Level::DEBUG };
-  std::atomic<bool> propagate_{ true };
+  std::weak_ptr<LoggerNode> parent_; // guarded by mutex_
+  std::atomic<Level> level_{Level::DEBUG};
+  std::atomic<bool> propagate_{true};
   std::vector<std::shared_ptr<LoggerNode>> spChildren_; // guarded by mutex_
   std::vector<std::shared_ptr<Handler>> spHandlers_;
   mutable std::mutex mutex_;
@@ -162,7 +162,7 @@ class Logger {
   std::shared_ptr<LoggerNode> spNode_;
 
   std::shared_ptr<LoggerNode> getNode() const { return spNode_; }
-  void log(Level level, const std::string &message) { spNode_->log(level, message); }
+  void log(Level level, const std::string& message) { spNode_->log(level, message); }
 
 public:
   explicit Logger(std::shared_ptr<LoggerNode> node);
@@ -173,10 +173,10 @@ public:
   // the original object (or a moved-from one). Rebind them to `this` instead
   // of copying/moving the source's proxy state (which is just logger_+level_,
   // already correct for a freshly constructed proxy here).
-  Logger(const Logger &other);
-  Logger &operator=(const Logger &other);
-  Logger(Logger &&other) noexcept;
-  Logger &operator=(Logger &&other) noexcept;
+  Logger(const Logger& other);
+  Logger& operator=(const Logger& other);
+  Logger(Logger&& other) noexcept;
+  Logger& operator=(Logger&& other) noexcept;
 
   LogProxy debug;
   LogProxy info;
@@ -188,7 +188,7 @@ public:
   Level getLevel() const { return spNode_->getLevel(); }
 
   void addHandler(std::shared_ptr<Handler> spHandler) { spNode_->addHandler(std::move(spHandler)); }
-  void addFileHandler(const std::string &filename, Level level = Level::DEBUG) {
+  void addFileHandler(const std::string& filename, Level level = Level::DEBUG) {
     spNode_->addFileHandler(filename, level);
   }
 
@@ -196,22 +196,23 @@ public:
   bool getPropagate() const { return spNode_->getPropagate(); }
 
   /** Re-parent this logger under `targetLoggerName`. No-op if already that node. */
-  void redirectTo(const std::string &targetLoggerName);
+  void redirectTo(const std::string& targetLoggerName);
 
-  const std::string &getName() const { return spNode_->getName(); }
+  const std::string& getName() const { return spNode_->getName(); }
   std::string getFullName() const { return spNode_->getFullName(); }
 
   bool operator==(const Logger& other) const { return spNode_ == other.spNode_; }
   bool operator!=(const Logger& other) const { return spNode_ != other.spNode_; }
 };
 
-template <typename T> LogStream LogProxy::operator<<(const T &value) {
+template <typename T>
+LogStream LogProxy::operator<<(const T& value) {
   LogStream stream(logger_, level_);
   stream << value;
   return stream;
 }
 
-Logger getLogger(const std::string &name);
+Logger getLogger(const std::string& name);
 Logger getRootLogger();
 
 Level getLevel();
@@ -226,6 +227,5 @@ void setEmitFloor(Level floor);
 
 } // namespace logging
 } // namespace pp
-
 
 #endif // PP_COMMON_LOGGER_H

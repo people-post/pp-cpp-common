@@ -4,9 +4,13 @@
 
 namespace pp {
 
-ThreadExecutor::ThreadExecutor() : thread_([this]() { Run(); }) { redirectLogger("ThreadExecutor"); }
+ThreadExecutor::ThreadExecutor() : thread_([this]() { Run(); }) {
+  redirectLogger("ThreadExecutor");
+}
 
-ThreadExecutor::~ThreadExecutor() { Stop(); }
+ThreadExecutor::~ThreadExecutor() {
+  Stop();
+}
 
 void ThreadExecutor::Post(Task task) {
   if (!task) {
@@ -22,7 +26,9 @@ void ThreadExecutor::Post(Task task) {
   wake_.notify_one();
 }
 
-bool ThreadExecutor::RunsTasksOnCurrentThread() const { return std::this_thread::get_id() == thread_.get_id(); }
+bool ThreadExecutor::RunsTasksOnCurrentThread() const {
+  return std::this_thread::get_id() == thread_.get_id();
+}
 
 SerialExecutor::TimerId ThreadExecutor::PostAfter(const std::chrono::milliseconds delay, Task task) {
   if (!task) {
@@ -43,7 +49,7 @@ SerialExecutor::TimerId ThreadExecutor::PostAfter(const std::chrono::millisecond
 }
 
 void ThreadExecutor::CancelTimer(const TimerId id) {
-  Task cancelled;  // destroyed outside the lock: it may own anything
+  Task cancelled; // destroyed outside the lock: it may own anything
   std::lock_guard<std::mutex> lock(mutex_);
   if (auto it = timers_.find(id); it != timers_.end()) {
     cancelled = std::move(it->second);

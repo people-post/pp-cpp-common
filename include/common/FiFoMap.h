@@ -34,10 +34,10 @@ public:
     index_.clear();
   }
 
-  bool contains(const K &key) const { return index_.find(key) != index_.end(); }
+  bool contains(const K& key) const { return index_.find(key) != index_.end(); }
 
   /** Insert or assign. New keys append; existing keys keep insertion position. */
-  void set(const K &key, V value) {
+  void set(const K& key, V value) {
     auto it = index_.find(key);
     if (it != index_.end()) {
       entries_[it->second].second = std::move(value);
@@ -47,7 +47,7 @@ public:
     entries_.emplace_back(key, std::move(value));
   }
 
-  void set(K &&key, V value) {
+  void set(K&& key, V value) {
     auto it = index_.find(key);
     if (it != index_.end()) {
       entries_[it->second].second = std::move(value);
@@ -58,7 +58,7 @@ public:
     entries_.emplace_back(std::move(key), std::move(value));
   }
 
-  std::optional<std::reference_wrapper<V>> tryGet(const K &key) {
+  std::optional<std::reference_wrapper<V>> tryGet(const K& key) {
     auto it = index_.find(key);
     if (it == index_.end()) {
       return std::nullopt;
@@ -66,7 +66,7 @@ public:
     return entries_[it->second].second;
   }
 
-  std::optional<std::reference_wrapper<const V>> tryGet(const K &key) const {
+  std::optional<std::reference_wrapper<const V>> tryGet(const K& key) const {
     auto it = index_.find(key);
     if (it == index_.end()) {
       return std::nullopt;
@@ -74,7 +74,7 @@ public:
     return entries_[it->second].second;
   }
 
-  V &at(const K &key) {
+  V& at(const K& key) {
     auto it = index_.find(key);
     if (it == index_.end()) {
       throw std::out_of_range("FiFoMap::at");
@@ -82,7 +82,7 @@ public:
     return entries_[it->second].second;
   }
 
-  const V &at(const K &key) const {
+  const V& at(const K& key) const {
     auto it = index_.find(key);
     if (it == index_.end()) {
       throw std::out_of_range("FiFoMap::at");
@@ -90,7 +90,7 @@ public:
     return entries_[it->second].second;
   }
 
-  bool erase(const K &key) {
+  bool erase(const K& key) {
     auto it = index_.find(key);
     if (it == index_.end()) {
       return false;
@@ -98,7 +98,7 @@ public:
     const size_t idx = it->second;
     index_.erase(it);
     entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(idx));
-    for (auto &kv : index_) {
+    for (auto& kv : index_) {
       if (kv.second > idx) {
         --kv.second;
       }
@@ -113,15 +113,14 @@ public:
   const_iterator cbegin() const { return entries_.cbegin(); }
   const_iterator cend() const { return entries_.cend(); }
 
-  const std::vector<value_type> &entries() const { return entries_; }
+  const std::vector<value_type>& entries() const { return entries_; }
 
-  bool operator==(const FiFoMap &other) const {
+  bool operator==(const FiFoMap& other) const {
     if (entries_.size() != other.entries_.size()) {
       return false;
     }
     for (size_t i = 0; i < entries_.size(); ++i) {
-      if (entries_[i].first != other.entries_[i].first ||
-          entries_[i].second != other.entries_[i].second) {
+      if (entries_[i].first != other.entries_[i].first || entries_[i].second != other.entries_[i].second) {
         return false;
       }
     }

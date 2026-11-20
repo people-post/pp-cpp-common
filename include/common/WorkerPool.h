@@ -89,8 +89,7 @@ private:
 };
 
 template <typename Result>
-void WorkerPool::PostAndReply(WorkerLane lane, std::function<Result()> work,
-                              std::function<void(Result)> on_done) {
+void WorkerPool::PostAndReply(WorkerLane lane, std::function<Result()> work, std::function<void(Result)> on_done) {
   Post(lane, [work = std::move(work), on_done = std::move(on_done)]() mutable {
     Result result = work();
     if (on_done) {
@@ -100,4 +99,3 @@ void WorkerPool::PostAndReply(WorkerLane lane, std::function<Result()> work,
 }
 
 } // namespace pp
-

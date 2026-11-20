@@ -30,15 +30,11 @@ public:
    */
   enum class Sync { Durable, None };
 
-  static Roe<void> Write(const std::string &path, std::string_view data,
-                         Sync sync = Sync::Durable);
-  static Roe<void> Write(const std::string &path,
-                         const std::vector<uint8_t> &data,
-                         Sync sync = Sync::Durable);
+  static Roe<void> Write(const std::string& path, std::string_view data, Sync sync = Sync::Durable);
+  static Roe<void> Write(const std::string& path, const std::vector<uint8_t>& data, Sync sync = Sync::Durable);
   /** `prefix` then `data` as one file (a header before a large payload, without
    * a joined copy of it). */
-  static Roe<void> Write(const std::string &path, std::string_view prefix,
-                         const std::vector<uint8_t> &data,
+  static Roe<void> Write(const std::string& path, std::string_view prefix, const std::vector<uint8_t>& data,
                          Sync sync = Sync::Durable);
 };
 

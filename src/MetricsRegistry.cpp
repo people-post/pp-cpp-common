@@ -64,7 +64,7 @@ std::string Number(const double value) {
   for (int precision = 6; precision <= std::numeric_limits<double>::max_digits10; ++precision) {
     std::ostringstream out;
     out << std::setprecision(precision) << value;
-    if (std::strtod(out.str().c_str(), nullptr) == value) {  // no throw on subnormals (unlike stod)
+    if (std::strtod(out.str().c_str(), nullptr) == value) { // no throw on subnormals (unlike stod)
       return out.str();
     }
   }
@@ -87,8 +87,7 @@ MetricHistogram::MetricHistogram(std::vector<double> bounds)
 }
 
 void MetricHistogram::Observe(const double value) {
-  const size_t index =
-      static_cast<size_t>(std::lower_bound(bounds_.begin(), bounds_.end(), value) - bounds_.begin());
+  const size_t index = static_cast<size_t>(std::lower_bound(bounds_.begin(), bounds_.end(), value) - bounds_.begin());
   buckets_[index].fetch_add(1, std::memory_order_relaxed);
   AtomicAdd(sum_, value);
   count_.fetch_add(1, std::memory_order_relaxed);
@@ -102,7 +101,7 @@ MetricHistogram::Snapshot MetricHistogram::Read() const {
     running += buckets_[i].load(std::memory_order_relaxed);
     snap.cumulative.push_back(running);
   }
-  snap.count = running;  // consistent with the buckets (count_ may be a step ahead)
+  snap.count = running; // consistent with the buckets (count_ may be a step ahead)
   snap.sum = sum_.load(std::memory_order_relaxed);
   return snap;
 }
@@ -157,7 +156,7 @@ MetricsRegistry::CollectorId MetricsRegistry::AddCollector(std::function<void(Me
 }
 
 void MetricsRegistry::RemoveCollector(const CollectorId id) {
-  std::lock_guard lock(collect_mu_);  // waits out a scrape running it
+  std::lock_guard lock(collect_mu_); // waits out a scrape running it
   collectors_.erase(id);
 }
 
@@ -177,23 +176,23 @@ std::string MetricsRegistry::RenderPrometheus() {
     out << "# HELP " << name << ' ' << family.help << '\n' << "# TYPE " << name << ' ' << type << '\n';
     for (const auto& series : family.series) {
       switch (family.type) {
-      case Type::Counter:
-        out << name << LabelText(series->labels) << ' ' << series->counter->Value() << '\n';
-        break;
-      case Type::Gauge:
-        out << name << LabelText(series->labels) << ' ' << Number(series->gauge->Value()) << '\n';
-        break;
-      case Type::Histogram: {
-        const auto snap = series->histogram->Read();
-        for (size_t i = 0; i < snap.bounds.size(); ++i) {
-          out << name << "_bucket" << LabelText(series->labels, "le", Number(snap.bounds[i])) << ' '
-              << snap.cumulative[i] << '\n';
+        case Type::Counter:
+          out << name << LabelText(series->labels) << ' ' << series->counter->Value() << '\n';
+          break;
+        case Type::Gauge:
+          out << name << LabelText(series->labels) << ' ' << Number(series->gauge->Value()) << '\n';
+          break;
+        case Type::Histogram: {
+          const auto snap = series->histogram->Read();
+          for (size_t i = 0; i < snap.bounds.size(); ++i) {
+            out << name << "_bucket" << LabelText(series->labels, "le", Number(snap.bounds[i])) << ' '
+                << snap.cumulative[i] << '\n';
+          }
+          out << name << "_bucket" << LabelText(series->labels, "le", "+Inf") << ' ' << snap.count << '\n';
+          out << name << "_sum" << LabelText(series->labels) << ' ' << Number(snap.sum) << '\n';
+          out << name << "_count" << LabelText(series->labels) << ' ' << snap.count << '\n';
+          break;
         }
-        out << name << "_bucket" << LabelText(series->labels, "le", "+Inf") << ' ' << snap.count << '\n';
-        out << name << "_sum" << LabelText(series->labels) << ' ' << Number(snap.sum) << '\n';
-        out << name << "_count" << LabelText(series->labels) << ' ' << snap.count << '\n';
-        break;
-      }
       }
     }
   }

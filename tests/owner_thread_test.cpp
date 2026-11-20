@@ -117,11 +117,13 @@ TEST_F(OwnerThreadTest, ScheduleOnPostsOntoTheOwnerAfterTheDelay) {
   std::atomic<bool> on_owner{false};
   const auto posted = std::chrono::steady_clock::now();
   std::atomic<long long> waited_ms{0};
-  ASSERT_NE(AppRuntime::ScheduleOn(kOwner, 30ms, [&] {
-              waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - posted)
-                              .count();
-              on_owner = AppRuntime::CurrentlyOn(kOwner);
-            }),
+  ASSERT_NE(AppRuntime::ScheduleOn(kOwner, 30ms,
+                                   [&] {
+                                     waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                     std::chrono::steady_clock::now() - posted)
+                                                     .count();
+                                     on_owner = AppRuntime::CurrentlyOn(kOwner);
+                                   }),
             0u);
   ASSERT_TRUE(WaitFor([&] { return on_owner.load(); }));
   EXPECT_GE(waited_ms.load(), 25);
@@ -169,7 +171,7 @@ TEST_F(OwnerThreadTest, DrainWorkersThenUISitsBehindOwnerQueues) {
 TEST_F(OwnerThreadTest, DroppedPostsDoNotStallTheNextQuiesce) {
   Start(OwnerThreadMode::Manual);
   AppRuntime::PostTo(kOwner, [] {});
-  AppRuntime::Shutdown();  // owner stops with the task still queued
+  AppRuntime::Shutdown(); // owner stops with the task still queued
   AppRuntime::Initialize();
   const auto began = std::chrono::steady_clock::now();
   EXPECT_TRUE(AppRuntime::QuiesceForTeardown(1s));
@@ -209,9 +211,7 @@ TEST_F(OwnerThreadTest, RunAndWaitRunsOnTheDedicatedOwnerAndWaits) {
 TEST_F(OwnerThreadTest, RunAndWaitDrainsAManualOwner) {
   Start(OwnerThreadMode::Manual);
   bool ran = false;
-  AppRuntime::RunAndWait(kOwner, [&] {
-    ran = AppRuntime::CurrentlyOn(kOwner);
-  });
+  AppRuntime::RunAndWait(kOwner, [&] { ran = AppRuntime::CurrentlyOn(kOwner); });
   EXPECT_TRUE(ran);
 }
 
@@ -237,8 +237,7 @@ TEST_F(OwnerThreadTest, RunAndWaitWithoutAnOwnerRunsInline) {
   Start(OwnerThreadMode::Manual);
   AppRuntime::Shutdown();
   bool stand_in = false;
-  AppRuntime::RunAndWait(kOwner,
-                         [&] { stand_in = AppRuntime::CurrentlyOn(kOwner); });
+  AppRuntime::RunAndWait(kOwner, [&] { stand_in = AppRuntime::CurrentlyOn(kOwner); });
   EXPECT_TRUE(stand_in);
   AppRuntime::Initialize();
 }

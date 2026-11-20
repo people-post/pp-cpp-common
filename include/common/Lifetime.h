@@ -62,7 +62,8 @@ public:
   }
 
   /** `fn`, run only while the generation it was bound in lasts; counted while it runs. */
-  template <typename F> auto Bind(F&& fn) const {
+  template <typename F>
+  auto Bind(F&& fn) const {
     Token token = state_;
     const uint64_t snapshot = Snapshot();
     // Shared so the result is const-callable (std::function) and may wrap a mutable functor.
@@ -79,7 +80,8 @@ public:
   }
 
   /** Bind `task`, then hand it to `post`. */
-  template <typename PostFn> void Post(PostFn&& post, std::function<void()> task) const {
+  template <typename PostFn>
+  void Post(PostFn&& post, std::function<void()> task) const {
     if (!task) {
       return;
     }

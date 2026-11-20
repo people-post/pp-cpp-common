@@ -60,7 +60,7 @@ public:
 
 private:
   const std::vector<double> bounds_;
-  std::unique_ptr<std::atomic<uint64_t>[]> buckets_;  // per bound, then +Inf (not cumulative)
+  std::unique_ptr<std::atomic<uint64_t>[]> buckets_; // per bound, then +Inf (not cumulative)
   std::atomic<double> sum_{0.0};
   std::atomic<uint64_t> count_{0};
 };
@@ -113,7 +113,7 @@ private:
                const std::vector<double>* bounds);
 
   std::mutex mu_;
-  std::map<std::string, Family> families_;  // sorted: stable output
+  std::map<std::string, Family> families_; // sorted: stable output
   /** Held while collectors run and while one is removed. */
   std::mutex collect_mu_;
   std::map<CollectorId, std::function<void(MetricsRegistry&)>> collectors_;

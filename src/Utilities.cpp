@@ -29,11 +29,9 @@ namespace {
 // Fills `bytes` with OS-CSPRNG output. GenerateUuid's callers use the result
 // as a nonce/identifier, so a seeded PRNG (predictable given the seed) is not
 // acceptable here.
-void FillRandomBytes(uint8_t *bytes, size_t count) {
+void FillRandomBytes(uint8_t* bytes, size_t count) {
 #if defined(_WIN32)
-  const NTSTATUS status = BCryptGenRandom(
-      nullptr, bytes, static_cast<ULONG>(count),
-      BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+  const NTSTATUS status = BCryptGenRandom(nullptr, bytes, static_cast<ULONG>(count), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
   if (status != 0 /* STATUS_SUCCESS */) {
     throw std::runtime_error("BCryptGenRandom failed");
   }
@@ -53,7 +51,7 @@ void FillRandomBytes(uint8_t *bytes, size_t count) {
     throw std::runtime_error("getrandom failed");
   }
 #else
-  std::FILE *f = std::fopen("/dev/urandom", "rb");
+  std::FILE* f = std::fopen("/dev/urandom", "rb");
   if (!f) {
     throw std::runtime_error("failed to open /dev/urandom");
   }
@@ -74,7 +72,7 @@ std::string GenerateUuid() {
   bytes[6] = static_cast<uint8_t>((bytes[6] & 0x0F) | 0x40);
   bytes[8] = static_cast<uint8_t>((bytes[8] & 0x3F) | 0x80);
 
-  static const char *kHex = "0123456789abcdef";
+  static const char* kHex = "0123456789abcdef";
   std::string out;
   out.reserve(36);
   for (size_t i = 0; i < bytes.size(); ++i) {
@@ -88,8 +86,7 @@ std::string GenerateUuid() {
 }
 
 int64_t NowUnixMs() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::system_clock::now().time_since_epoch())
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
       .count();
 }
 

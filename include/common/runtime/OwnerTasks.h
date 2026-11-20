@@ -55,7 +55,7 @@ public:
 
   private:
     friend class OwnerTasks;
-    std::recursive_mutex mu_;  // an executor with no owner may run a task inline, which may post again
+    std::recursive_mutex mu_; // an executor with no owner may run a task inline, which may post again
     OwnerTasks* tasks_ = nullptr;
   };
 

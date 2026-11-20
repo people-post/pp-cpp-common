@@ -11,7 +11,8 @@ namespace pp {
 /**
  * Pack a struct/object to binary using OutputArchive (pp Binary Wire Profile).
  */
-template <typename T> std::string binaryPack(const T &t) {
+template <typename T>
+std::string binaryPack(const T& t) {
   std::ostringstream oss;
   OutputArchive ar(oss);
   ar & t;
@@ -21,7 +22,8 @@ template <typename T> std::string binaryPack(const T &t) {
 /**
  * Unpack binary bytes into T. Fails on parse error or trailing bytes.
  */
-template <typename T> Roe<T> binaryUnpack(const std::string &data) {
+template <typename T>
+Roe<T> binaryUnpack(const std::string& data) {
   std::istringstream iss(data);
   InputArchive ar(iss);
   T result;
@@ -36,4 +38,3 @@ template <typename T> Roe<T> binaryUnpack(const std::string &data) {
 }
 
 } // namespace pp
-
