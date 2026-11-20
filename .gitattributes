@@ -1,0 +1,3 @@
+# Frozen test vectors are copied byte for byte by other repos (and a test compares the file's bytes): never convert
+# their line endings on checkout.
+tests/data/** -text
