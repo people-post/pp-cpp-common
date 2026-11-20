@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(pp-cpp-common VERSION 1.4.0 LANGUAGES CXX)
+project(pp-cpp-common VERSION 1.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +10,7 @@ option(PP_COMMON_BUILD_TESTS "Build pp-cpp-common unit tests" OFF)
 add_library(pp_common STATIC
   src/AtomicFileWrite.cpp
   src/CivilTime.cpp
+  src/ExtArea.cpp
   src/Logger.cpp
   src/Module.cpp
   src/ManualExecutor.cpp
@@ -72,6 +73,7 @@ if(PP_COMMON_BUILD_TESTS)
     tests/atomic_file_write_test.cpp
     tests/civil_time_test.cpp
     tests/executor_test.cpp
+    tests/ext_area_test.cpp
     tests/helpers_test.cpp
     tests/lifetime_test.cpp
     tests/serial_executor_test.cpp
@@ -88,6 +90,9 @@ if(PP_COMMON_BUILD_TESTS)
     tests/owner_thread_test.cpp
     tests/runtime_owner_executor_test.cpp
     tests/ui_mailbox_thread_test.cpp)
+  # The frozen extension-area vectors (tests/ext_area_test.cpp; PP_WRITE_EXT_AREA_VECTORS=<path> rewrites them).
+  target_compile_definitions(pp_common_test PRIVATE
+    PP_EXT_AREA_VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/ext_area_vectors.json")
   target_link_libraries(pp_common_test PRIVATE
     pp_common
     GTest::gtest

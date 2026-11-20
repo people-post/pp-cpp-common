@@ -14,6 +14,7 @@ Shared C++ foundation for People Post apps (`namespace pp`).
 - **Process runtime** (`common/runtime/`): `AppRuntime` — worker pool, coordinator (mailbox + timer wheel), UI mailbox, a teardown gate (`QuiesceForTeardown`), and **owner threads** the app registers (`AppRuntimeConfig::owners`: id + thread name; Dedicated, or Manual for tests). On an owner: `OwnerExecutor` / `RuntimeOwnerExecutor` (where a runner runs), `OwnerTasks` (one object's posts and timers, dropped with it), `OwnerOutbox` (a child's typed report to its parent), `OwnerSteps` (continuations waiting for an event); `QueueOwnerExecutor` for tests. `PP_ASSERT_ON_OWNER` checks affinity in debug builds
 - `CivilTime`, `Utilities`
 - Binary wire helpers (`Serialize`, `BinaryPack`)
+- `ExtArea` — the signed extension area (pp-browser `SIGNED_FORMATS.md` § 1.2, RC020): the last field of every signed object's signed bytes, `u64 BE length ‖ entries`, each entry `u16 BE type ‖ u32 BE length ‖ value`, bit 15 of the type = critical, strictly ascending types, at most 4 KiB of entries; decode (whole buffer, embedded at an offset, or the entries alone for JSON's `ext_b64`), encode, and the "unknown critical entry" query
 - Human document tree: `Value` / `Object`, `FiFoMap`
 - Hand-written UTF-8 JSON IO (`common/io/Json.h`)
 
@@ -29,6 +30,14 @@ ctest --test-dir build --output-on-failure
 ```
 
 CI (`.github/workflows/build.yml`) builds and tests on Ubuntu 24.04, Windows 2022, and macOS 14 for every PR to `main`.
+
+### Frozen vectors
+
+[`tests/data/ext_area_vectors.json`](tests/data/ext_area_vectors.json) is the extension area's cross-implementation set (SIGNED_FORMATS § 6): pp-browser, pp-cpp-mesh and the relay (`packages/shared/src/sign-payload/ext-area.ts`) copy it byte for byte. Its shape is described at the top of [`tests/ext_area_test.cpp`](tests/ext_area_test.cpp), which builds the file by hand-written bytes and fails when the committed file differs. To rewrite it after a deliberate change:
+
+```bash
+PP_WRITE_EXT_AREA_VECTORS=$PWD/tests/data/ext_area_vectors.json ./build/pp_common_test --gtest_filter='ExtAreaVectorsTest.*'
+```
 
 ## Consume (FetchContent)
 
