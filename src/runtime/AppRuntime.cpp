@@ -7,12 +7,14 @@
 #include "common/Logger.h"
 #include "common/SequencedTaskRunner.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -22,6 +24,8 @@ namespace {
 
 std::unique_ptr<ThreadRuntime> g_thread_runtime;
 bool g_testing_worker_override = false;
+/** InstallWorkerPoolForTesting's pool: PostWorker posts there instead (DrainWorkersThenUI waits on it). */
+WorkerPool* g_testing_pool = nullptr;
 
 std::mutex g_shutdown_mu;
 bool g_shutting_down = false;
@@ -415,23 +419,46 @@ bool AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds budget) {
     return true;
   }
   ResumeBackgroundWork();
-  std::atomic<bool> done{false};
-  // Critical first, then Normal, then each registered owner in id order, so work they queued (and
-  // posted back) has run too; the UI mailbox last.
-  PostWorker(WorkerLane::Critical, [&done]() {
-    PostWorker(WorkerLane::Normal, [&done]() {
-      PostThroughOwners(0, [&done]() { PostUI([&done]() { done.store(true, std::memory_order_release); }); });
-    });
-  });
   const auto deadline = std::chrono::steady_clock::now() + budget;
-  while (!done.load(std::memory_order_acquire)) {
+  // While waiting: pump the UI mailbox and Manual owners (an earlier task may wait on them), at most kPump apart.
+  constexpr std::chrono::milliseconds kPump{5};
+  const auto pump_then_check_budget = [&deadline]() {
     RunUITasks();
     RunAllOwnerTasks();
-    if (std::chrono::steady_clock::now() >= deadline) {
+    return std::chrono::steady_clock::now() < deadline;
+  };
+
+  // 1. Every Critical / Normal task posted before now, and what those post while they run, has finished — not
+  //    merely started: the lanes share one multi-threaded pool, so a marker task could run beside them.
+  //    WorkerPool::CompletionBarrier has the argument; it lives for the whole drain (this thread's posts are new
+  //    work meanwhile).
+  WorkerPool* const pool = g_testing_worker_override ? g_testing_pool : &g_thread_runtime->Workers();
+  std::optional<WorkerPool::CompletionBarrier> earlier;
+  if (pool != nullptr) {
+    earlier.emplace(*pool);
+  }
+  while (earlier) {
+    if (!pump_then_check_budget()) {
       RunUITasks();
       return false;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    const auto left =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    if (earlier->Wait(std::clamp(left, std::chrono::milliseconds(0), kPump))) {
+      break;
+    }
+  }
+
+  // 2. Then through each registered owner in id order (work the earlier tasks posted there runs first), the UI
+  //    mailbox last. Shared, so a barrier task still queued when the budget passes writes to live memory.
+  const auto done = std::make_shared<std::atomic<bool>>(false);
+  PostThroughOwners(0, [done]() { PostUI([done]() { done->store(true, std::memory_order_release); }); });
+  while (!done->load(std::memory_order_acquire)) {
+    if (!pump_then_check_budget()) {
+      RunUITasks();
+      return false;
+    }
+    std::this_thread::sleep_for(kPump);
   }
   RunUITasks();
   return true;
@@ -918,11 +945,13 @@ void AppRuntime::CancelCoordinatorTimer(uint64_t timer_id) {
 
 void AppRuntime::InstallWorkerPoolForTesting(WorkerPool* pool) {
   g_testing_worker_override = true;
+  g_testing_pool = pool;
   WorkerDispatch::Install(pool);
 }
 
 void AppRuntime::ClearWorkerPoolForTesting() {
   WorkerDispatch::Uninstall();
+  g_testing_pool = nullptr;
   g_testing_worker_override = false;
 }
 

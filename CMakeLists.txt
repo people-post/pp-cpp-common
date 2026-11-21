@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(pp-cpp-common VERSION 1.5.0 LANGUAGES CXX)
+project(pp-cpp-common VERSION 1.5.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,6 +83,7 @@ if(PP_COMMON_BUILD_TESTS)
     tests/utilities_test.cpp
     tests/value_meta_test.cpp
     tests/worker_pool_test.cpp
+    tests/app_runtime_drain_test.cpp
     tests/app_runtime_teardown_test.cpp
     tests/app_runtime_worker_test.cpp
     tests/coordinator_thread_test.cpp

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <initializer_list>
 #include <string>
 
 #if defined(__ANDROID__) || defined(__linux__)
@@ -10,23 +11,7 @@
 
 namespace pp {
 
-namespace {
-
-std::deque<std::function<void()>>* QueueForLane(WorkerLane lane, std::deque<std::function<void()>>* critical,
-                                                std::deque<std::function<void()>>* normal,
-                                                std::deque<std::function<void()>>* background) {
-  switch (lane) {
-    case WorkerLane::Critical:
-      return critical;
-    case WorkerLane::Normal:
-      return normal;
-    case WorkerLane::Background:
-      return background;
-  }
-  return normal;
-}
-
-} // namespace
+thread_local WorkerPool::RunningTask WorkerPool::running_on_this_thread_{};
 
 size_t WorkerPool::ClampThreadCount(const size_t thread_count) {
   if (thread_count < kMinThreadCount) {
@@ -60,7 +45,24 @@ void WorkerPool::Post(WorkerLane lane, std::function<void()> task) {
     if (state_->stopped) {
       return;
     }
-    EnqueueLocked(*state_, lane, std::move(task));
+    QueuedTask queued{std::move(task), lane != WorkerLane::Background, 0};
+    const uint64_t ticket = state_->next_ticket++;
+    if (queued.counted) {
+      const RunningTask& poster = running_on_this_thread_;
+      queued.origin = poster.pool == state_.get() && poster.counted ? poster.origin : ticket;
+      ++state_->outstanding[queued.origin];
+    }
+    switch (lane) {
+      case WorkerLane::Critical:
+        state_->critical_queue.push_back(std::move(queued));
+        break;
+      case WorkerLane::Normal:
+        state_->normal_queue.push_back(std::move(queued));
+        break;
+      case WorkerLane::Background:
+        state_->background_queue.push_back(std::move(queued));
+        break;
+    }
   }
   state_->cv.notify_one();
 }
@@ -85,9 +87,14 @@ bool WorkerPool::Shutdown(std::chrono::milliseconds join_budget) {
       return state_->live_workers.load(std::memory_order_acquire) == 0 && threads_.empty();
     }
     state_->stopped = true;
-    state_->critical_queue.clear();
-    state_->normal_queue.clear();
-    state_->background_queue.clear();
+    for (auto* queue : {&state_->critical_queue, &state_->normal_queue, &state_->background_queue}) {
+      for (const QueuedTask& dropped : *queue) {
+        if (dropped.counted) {
+          SettleLocked(*state_, dropped.origin);
+        }
+      }
+      queue->clear();
+    }
   }
   state_->cv.notify_all();
 
@@ -147,10 +154,17 @@ void WorkerPool::WorkerMain(std::shared_ptr<SharedState> state, const size_t wor
   (void)worker_index;
 #endif
 
+  // A counted task settles under the lock the loop takes next, once its captures are gone.
+  bool settle = false;
+  uint64_t settle_origin = 0;
   for (;;) {
-    std::function<void()> task;
+    QueuedTask task;
     {
       std::unique_lock lock(state->mutex);
+      if (settle) {
+        SettleLocked(*state, settle_origin);
+        settle = false;
+      }
       state->cv.wait(lock, [&state]() { return state->stopped || (!state->paused && HasWorkLocked(*state)); });
       // Once Shutdown sets stopped, never dequeue — queued work was dropped under the same lock.
       if (state->stopped) {
@@ -162,12 +176,17 @@ void WorkerPool::WorkerMain(std::shared_ptr<SharedState> state, const size_t wor
         continue;
       }
     }
-    RunTaskSafely(state->logger, task);
+    running_on_this_thread_ = {state.get(), task.counted, task.origin};
+    RunTaskSafely(state->logger, task.run);
+    task.run = nullptr; // part of the task: what its captures' destructors post inherits its origin
+    running_on_this_thread_ = {};
+    settle = task.counted;
+    settle_origin = task.origin;
   }
 }
 
-bool WorkerPool::DequeueOneLocked(SharedState& state, std::function<void()>* out) {
-  std::deque<std::function<void()>>* queue = nullptr;
+bool WorkerPool::DequeueOneLocked(SharedState& state, QueuedTask* out) {
+  std::deque<QueuedTask>* queue = nullptr;
   if (!state.critical_queue.empty()) {
     queue = &state.critical_queue;
   } else if (!state.normal_queue.empty()) {
@@ -180,17 +199,56 @@ bool WorkerPool::DequeueOneLocked(SharedState& state, std::function<void()>* out
 
   *out = std::move(queue->front());
   queue->pop_front();
-  return static_cast<bool>(*out);
+  return true; // Post refuses empty tasks; a counted one must reach the settle either way
 }
 
 bool WorkerPool::HasWorkLocked(const SharedState& state) {
   return !state.critical_queue.empty() || !state.normal_queue.empty() || !state.background_queue.empty();
 }
 
-void WorkerPool::EnqueueLocked(SharedState& state, WorkerLane lane, std::function<void()> task) {
-  std::deque<std::function<void()>>* const queue =
-      QueueForLane(lane, &state.critical_queue, &state.normal_queue, &state.background_queue);
-  queue->push_back(std::move(task));
+void WorkerPool::SettleLocked(SharedState& state, const uint64_t origin) {
+  const auto it = state.outstanding.find(origin);
+  if (it != state.outstanding.end() && --it->second == 0) {
+    state.outstanding.erase(it);
+  }
+  if (state.barrier_waiters > 0) {
+    state.settled_cv.notify_all();
+  }
+}
+
+WorkerPool::CompletionBarrier::CompletionBarrier(WorkerPool& pool)
+    : state_(pool.state_), caller_(running_on_this_thread_) {
+  {
+    std::lock_guard lock(state_->mutex);
+    ticket_ = state_->next_ticket;
+  }
+  running_on_this_thread_ = {}; // posts from this thread while the barrier lives are new work
+}
+
+WorkerPool::CompletionBarrier::~CompletionBarrier() {
+  running_on_this_thread_ = caller_;
+}
+
+bool WorkerPool::CompletionBarrier::Wait(const std::chrono::milliseconds wait) {
+  std::unique_lock lock(state_->mutex);
+  if (SettledLocked()) {
+    return true;
+  }
+  ++state_->barrier_waiters;
+  const bool settled = state_->settled_cv.wait_for(lock, wait, [this]() { return SettledLocked(); });
+  --state_->barrier_waiters;
+  return settled;
+}
+
+bool WorkerPool::CompletionBarrier::SettledLocked() const {
+  size_t earlier = 0;
+  for (auto it = state_->outstanding.begin(); it != state_->outstanding.end() && it->first < ticket_; ++it) {
+    earlier += it->second;
+  }
+  // The calling task (made on one of this pool's counted tasks) is outstanding and below the ticket, and cannot
+  // finish while its thread waits here.
+  const size_t caller = caller_.pool == state_.get() && caller_.counted ? 1 : 0;
+  return earlier <= caller;
 }
 
 void WorkerPool::RunTaskSafely(logging::Logger& logger, std::function<void()>& task) {
