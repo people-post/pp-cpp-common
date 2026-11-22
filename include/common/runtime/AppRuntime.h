@@ -72,10 +72,25 @@ public:
   static size_t WorkerTotalQueuedCount();
 
   /**
-   * Wait until Critical then Normal worker lanes, then every owner, have drained past a barrier and
-   * the UI mailbox has run the barrier callback, so work posted before a component's teardown has
-   * finished before the component is destroyed.
-   * @return true if the barrier completed within budget.
+   * Wait until work posted before the call has finished, so a component torn down after it is not
+   * touched by that work:
+   *  1. every Critical / Normal worker task posted before the call has finished (run to the end, its
+   *     captures released) — not merely started: the lanes are priority lanes of one multi-threaded
+   *     pool — and so has every Critical / Normal task those tasks posted while they ran, transitively;
+   *  2. then each registered owner in id order has run what was queued on it before the barrier
+   *     reached it (so what the workers above posted there), and the UI mailbox has run the barrier
+   *     callback last (so the workers' and owners' replies to UI).
+   * Work posted after the call began by anything else (other threads, timers, a worker task that is
+   * not one of those above) is not waited for: a busy app cannot starve the drain. Background-lane
+   * tasks (long blocking work) are not waited for. Pumps the UI mailbox and Manual owners on the
+   * calling thread while it waits. Mechanism and argument: WorkerPool::CompletionBarrier.
+   *
+   * From a worker task: the calling task itself is not waited for (it cannot finish first), the work
+   * it posted before the call is. Two worker tasks draining at once each wait for the other until
+   * their budgets pass (false), and the earlier work needs a free pool thread: drain from the UI
+   * thread or an owner where possible.
+   * @return true if the barrier completed within budget; false once the budget passed first (earlier
+   * work may still be running: do not free what it may touch).
    */
   static bool DrainWorkersThenUI(std::chrono::milliseconds budget = std::chrono::milliseconds(2000));
 
