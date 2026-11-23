@@ -14,7 +14,7 @@
 namespace pp {
 
 /**
- * Operator metrics (projects/node-monitoring; names in docs/contracts/NODE_METRICS.md): counters,
+ * Operator metrics (pp-browser node-monitoring D001; names in its docs/contracts/NODE_METRICS.md): counters,
  * gauges and fixed-bucket histograms, rendered as Prometheus text for `/metrics`. Instruments are
  * registered once and then updated lock-free from any thread; components only update them (no
  * threads, no timers). Labels are fixed at registration and low-cardinality — never peer ids,
