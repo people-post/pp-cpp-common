@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(pp-cpp-common VERSION 1.5.1 LANGUAGES CXX)
+project(pp-cpp-common VERSION 1.5.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -76,6 +76,7 @@ if(PP_COMMON_BUILD_TESTS)
     tests/executor_test.cpp
     tests/ext_area_test.cpp
     tests/helpers_test.cpp
+    tests/result_or_error_test.cpp
     tests/lifetime_test.cpp
     tests/serial_executor_test.cpp
     tests/logger_emit_floor_test.cpp
