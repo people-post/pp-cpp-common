@@ -68,6 +68,7 @@ if(PP_COMMON_BUILD_TESTS)
     GIT_TAG v1.14.0
   )
   FetchContent_MakeAvailable(googletest)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/PpSpecs.cmake)
 
   add_executable(pp_common_test
     tests/atomic_file_write_test.cpp
@@ -91,9 +92,10 @@ if(PP_COMMON_BUILD_TESTS)
     tests/owner_thread_test.cpp
     tests/runtime_owner_executor_test.cpp
     tests/ui_mailbox_thread_test.cpp)
-  # The frozen extension-area vectors (tests/ext_area_test.cpp; PP_WRITE_EXT_AREA_VECTORS=<path> rewrites them).
+  # The frozen extension-area vectors, in pp-specs (tests/ext_area_test.cpp; PP_WRITE_EXT_AREA_VECTORS=<path> writes a
+  # fresh file, for a pp-specs pull request).
   target_compile_definitions(pp_common_test PRIVATE
-    PP_EXT_AREA_VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/ext_area_vectors.json")
+    PP_EXT_AREA_VECTORS_PATH="${PP_SPECS_VECTORS_DIR}/ext_area_vectors.json")
   target_link_libraries(pp_common_test PRIVATE
     pp_common
     GTest::gtest

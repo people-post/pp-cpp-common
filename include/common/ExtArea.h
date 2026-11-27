@@ -28,7 +28,7 @@ namespace pp {
  * An `ExtArea` only ever holds a valid set (it is built by a decoder or by `FromEntries`), so encoding cannot fail,
  * and a decoded area encodes back to the bytes it came from: unknown entries are kept, not dropped.
  *
- * A reader refuses as malformed, checking in this order (the frozen vectors, tests/data/ext_area_vectors.json, hold
+ * A reader refuses as malformed, checking in this order (the frozen vectors, pp-specs' vectors/ext_area_vectors.json, hold
  * one case of each):
  *   1. area form only: `LengthPastEnd` if the input is too short for the u64 length; then `TooLarge` if it says
  *      over 4 KiB; then `LengthPastEnd` if it runs past the end of the input.

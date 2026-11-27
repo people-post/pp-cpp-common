@@ -1,6 +1,6 @@
 // The signed extension area (common/ExtArea.h; pp-browser SIGNED_FORMATS.md § 1.2, § 6 "Extension area").
 //
-// Frozen vectors: tests/data/ext_area_vectors.json, copied byte for byte by pp-browser, pp-cpp-mesh and the relay
+// Frozen vectors: pp-specs' vectors/ext_area_vectors.json, read at its pinned tag by every implementation
 // (packages/shared/src/sign-payload/ext-area.ts). Each case's bytes are written here by hand, not by the encoder, so
 // the file checks the codec rather than echoing it. The committed file is checked against what this test builds;
 // PP_WRITE_EXT_AREA_VECTORS=<path> writes a fresh one. The file's shape:
