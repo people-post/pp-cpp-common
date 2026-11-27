@@ -150,9 +150,10 @@ public:
   const T& operator*() const { return value(); }
   T& operator*() { return value(); }
 
+  // A const result gives a const pointer (it gave a non-const one, which did not compile once used).
   template <typename U = T>
-  typename std::enable_if<!std::is_reference<U>::value, typename std::remove_reference<T>::type*>::type operator->()
-      const {
+  typename std::enable_if<!std::is_reference<U>::value, const typename std::remove_reference<T>::type*>::type
+  operator->() const {
     using StorageType = typename std::remove_reference<T>::type;
     return reinterpret_cast<const StorageType*>(&storage_);
   }
