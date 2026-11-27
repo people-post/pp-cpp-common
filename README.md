@@ -33,10 +33,10 @@ CI (`.github/workflows/build.yml`) builds and tests on Ubuntu 24.04, Windows 202
 
 ### Frozen vectors
 
-[`tests/data/ext_area_vectors.json`](tests/data/ext_area_vectors.json) is the extension area's cross-implementation set (SIGNED_FORMATS § 6): pp-browser, pp-cpp-mesh and the relay (`packages/shared/src/sign-payload/ext-area.ts`) copy it byte for byte. Its shape is described at the top of [`tests/ext_area_test.cpp`](tests/ext_area_test.cpp), which builds the file by hand-written bytes and fails when the committed file differs. To rewrite it after a deliberate change:
+[`ext_area_vectors.json`](https://github.com/people-post/pp-specs/blob/main/vectors/ext_area_vectors.json) is the extension area's cross-implementation set (SIGNED_FORMATS § 6). It lives in [pp-specs](https://github.com/people-post/pp-specs/blob/main/vectors/README.md), which every implementation (this library, pp-browser, the relay) reads at a pinned tag: the tests fetch it ([`cmake/PpSpecs.cmake`](cmake/PpSpecs.cmake); `-DPP_SPECS_SOURCE_DIR=<checkout>` for a local one). Its shape is described at the top of [`tests/ext_area_test.cpp`](tests/ext_area_test.cpp), which builds the file by hand-written bytes and fails when pp-specs' file differs. After a deliberate change (new cases only), write a fresh file and bring it to pp-specs by pull request, then move the pin:
 
 ```bash
-PP_WRITE_EXT_AREA_VECTORS=$PWD/tests/data/ext_area_vectors.json ./build/pp_common_test --gtest_filter='ExtAreaVectorsTest.*'
+PP_WRITE_EXT_AREA_VECTORS=/tmp/ext_area_vectors.json ./build/pp_common_test --gtest_filter='ExtAreaVectorsTest.*'
 ```
 
 ## Consume (FetchContent)
